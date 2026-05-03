@@ -55,7 +55,11 @@ REVIEW_FOLDER = BASE_DIR / "Output" / "CO_TEC1234_4567_review"
 OUTPUT_PDF = BASE_DIR / "Output" / "CO_TEC1234_4567_OUTPUT.pdf"
 CHECKPOINT_FILE = BASE_DIR / "Output" / "CO_TEC1234_4567_checkpoint.json"
 
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+import platform
+if platform.system() == "Windows":
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+else:
+    pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 # ================================================================
 # SETTINGS

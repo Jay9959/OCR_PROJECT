@@ -68,13 +68,13 @@ def process_all_pdfs():
     input_folder = Path(INPUT_FOLDER)
     output_folder = Path(OUTPUT_FOLDER)
 
-    if not input_folder.exists():
-        raise FileNotFoundError(f"Input folder not found: {input_folder}")
+    # Auto-create input folder if it doesn't exist
+    input_folder.mkdir(parents=True, exist_ok=True)
 
     pdf_files = sorted(input_folder.glob("*.pdf"))
 
     if len(pdf_files) == 0:
-        print("❌ No PDF files found")
+        print("❌ No PDF files found in:", input_folder)
         return
 
     output_folder.mkdir(parents=True, exist_ok=True)
@@ -90,4 +90,5 @@ def process_all_pdfs():
 # =========================
 # START
 # =========================
-process_all_pdfs()
+if __name__ == "__main__":
+    process_all_pdfs()
