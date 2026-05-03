@@ -12,7 +12,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="/style.css?v=2.0">
+    <link rel="stylesheet" href="/style.css?v=3.0">
     <link rel="icon"
         href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0%' y1='0%' x2='100%' y2='100%'><stop offset='0%' stop-color='%2306b6d4'/><stop offset='100%' stop-color='%238b5cf6'/></linearGradient></defs><rect x='10' y='10' width='80' height='80' rx='20' fill='none' stroke='url(%23g)' stroke-width='10'/><path d='M25 50 L75 50' stroke='%23ec4899' stroke-width='8' stroke-linecap='round'/><circle cx='50' cy='50' r='12' fill='%2306b6d4'/></svg>">
 </head>
@@ -130,17 +130,20 @@
 
         <!-- ─── Main Grid ─── -->
         <div class="main-grid">
-            <!-- LEFT PANEL: Controls + Config -->
+            <!-- LEFT PANEL: Controls -->
             <aside class="panel panel-left">
-                <!-- Control Card -->
-                <div class="card control-card">
+
+                <!-- ═══ STEP 1: PDF → Images Card ═══ -->
+                <div class="card control-card step-card" id="cardStep1">
                     <div class="card-header">
                         <h2 class="card-title">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                                 class="title-icon">
-                                <polygon points="5 3 19 12 5 21 5 3" />
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                <polyline points="14 2 14 8 20 8" />
                             </svg>
-                            Process Control
+                            <span class="step-badge">Step 1</span>
+                            PDF → Images
                         </h2>
                     </div>
                     <div class="card-body">
@@ -155,7 +158,7 @@
                                             <polyline points="17 8 12 3 7 8" />
                                             <line x1="12" y1="3" x2="12" y2="15" />
                                         </svg>
-                                        <span class="upload-text">Select Files or Folder</span>
+                                        <span class="upload-text">Select PDF Files or Folder</span>
                                         <span class="upload-hint">Drag & drop also works</span>
                                     </div>
                                 </label>
@@ -188,24 +191,9 @@
                                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                                     <polyline points="14 2 14 8 20 8" />
                                 </svg>
-                                <span>PDF → Images</span>
+                                <span>Convert PDF → Images</span>
                             </button>
-                            <button class="btn btn-primary btn-rotate" id="btnRotate" onclick="startProcess('rotate')" disabled>
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M21 12a9 9 0 11-6.22-8.56" />
-                                    <path d="M21 3v5h-5" />
-                                </svg>
-                                <span>Auto Rotate</span>
-                            </button>
-                            <button class="btn btn-success btn-download" id="btnDownload" onclick="downloadResult()" style="display:none;">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                    <polyline points="7 10 12 15 17 10" />
-                                    <line x1="12" y1="15" x2="12" y2="3" />
-                                </svg>
-                                <span>Download Result</span>
-                            </button>
-                            <button class="btn btn-danger" id="btnStop" onclick="stopProcess()" disabled>
+                            <button class="btn btn-danger" id="btnStopConvert" onclick="stopProcess()" disabled>
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <rect x="6" y="6" width="12" height="12" rx="1" />
                                 </svg>
@@ -213,18 +201,95 @@
                             </button>
                         </div>
 
-                        <!-- Progress Section -->
-                        <div class="progress-section" id="progressSection" style="display:none;">
+                        <!-- Progress Section for Step 1 -->
+                        <div class="progress-section" id="progressSection1" style="display:none;">
                             <div class="progress-header">
-                                <span class="progress-label" id="progressLabel">Processing...</span>
-                                <span class="progress-percent" id="progressPercent">0%</span>
+                                <span class="progress-label">PDF Conversion</span>
+                                <span class="progress-percent" id="progressPercent1">0%</span>
                             </div>
                             <div class="progress-bar-track">
-                                <div class="progress-bar-fill" id="progressFill" style="width: 0%"></div>
+                                <div class="progress-bar-fill" id="progressFill1" style="width: 0%"></div>
                                 <div class="progress-bar-glow"></div>
                             </div>
-                            <div class="progress-detail" id="progressDetail"></div>
+                            <div class="progress-detail" id="progressDetail1"></div>
                         </div>
+
+                        <!-- Completion badge -->
+                        <div class="step-complete-badge" id="step1Complete" style="display:none;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                                <polyline points="22 4 12 14.01 9 11.01" />
+                            </svg>
+                            <span>Conversion Complete!</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ═══ STEP 2: Auto Rotate Card ═══ -->
+                <div class="card control-card step-card step-card-hidden" id="cardStep2">
+                    <div class="card-header">
+                        <h2 class="card-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                class="title-icon">
+                                <path d="M21 12a9 9 0 11-6.22-8.56" />
+                                <path d="M21 3v5h-5" />
+                            </svg>
+                            <span class="step-badge">Step 2</span>
+                            Auto Rotate
+                        </h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="step2-description">
+                            <p>Images are ready! Click below to auto-detect and fix rotation on all converted images.</p>
+                        </div>
+
+                        <div class="control-buttons">
+                            <button class="btn btn-primary btn-rotate" id="btnRotate" onclick="startProcess('rotate')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 12a9 9 0 11-6.22-8.56" />
+                                    <path d="M21 3v5h-5" />
+                                </svg>
+                                <span>Start Auto Rotate</span>
+                            </button>
+                            <button class="btn btn-danger" id="btnStopRotate" onclick="stopProcess()" disabled>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="6" y="6" width="12" height="12" rx="1" />
+                                </svg>
+                                <span>Stop</span>
+                            </button>
+                        </div>
+
+                        <!-- Progress Section for Step 2 -->
+                        <div class="progress-section" id="progressSection2" style="display:none;">
+                            <div class="progress-header">
+                                <span class="progress-label">Auto Rotation</span>
+                                <span class="progress-percent" id="progressPercent2">0%</span>
+                            </div>
+                            <div class="progress-bar-track">
+                                <div class="progress-bar-fill" id="progressFill2" style="width: 0%"></div>
+                                <div class="progress-bar-glow"></div>
+                            </div>
+                            <div class="progress-detail" id="progressDetail2"></div>
+                        </div>
+
+                        <!-- Download button after rotation complete -->
+                        <button class="btn btn-success btn-download" id="btnDownload" onclick="downloadResult()" style="display:none;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                <polyline points="7 10 12 15 17 10" />
+                                <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                            <span>Download Result</span>
+                        </button>
+
+                        <!-- Back button to return to Step 1 -->
+                        <button class="btn btn-secondary btn-back" id="btnBackToStep1" onclick="showStep1()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="19" y1="12" x2="5" y2="12" />
+                                <polyline points="12 19 5 12 12 5" />
+                            </svg>
+                            <span>Back to Step 1</span>
+                        </button>
                     </div>
                 </div>
 
@@ -282,7 +347,7 @@
     <!-- ═══ Custom Cursor ═══ -->
     <div class="cursor" id="cursor"></div>
 
-    <script src="/app.js?v=2.0"></script>
+    <script src="/app.js?v=3.0"></script>
 </body>
 
 </html>

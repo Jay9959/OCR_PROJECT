@@ -144,15 +144,22 @@ function connectSSE() {
     };
 }
 
+// ── Step Card Management ────────────────────────────
+function showStep1() {
+    document.getElementById("cardStep1").classList.remove("step-card-hidden");
+    document.getElementById("cardStep2").classList.add("step-card-hidden");
+}
+
+function showStep2() {
+    document.getElementById("cardStep1").classList.add("step-card-hidden");
+    document.getElementById("cardStep2").classList.remove("step-card-hidden");
+}
+
 // ── UI Updates ──────────────────────────────────────
 function updateStatusUI(data) {
     const pill = document.getElementById("statusPill");
     const dot = pill.querySelector(".status-text");
     const timer = document.getElementById("navTimer");
-    const btnConvert = document.getElementById("btnConvert");
-    const btnRotate = document.getElementById("btnRotate");
-    const btnStop = document.getElementById("btnStop");
-    const progressSection = document.getElementById("progressSection");
 
     // Status pill
     pill.className = "status-pill";
@@ -172,35 +179,61 @@ function updateStatusUI(data) {
         timer.textContent = `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
     }
 
-    // Buttons
     const isRunning = data.status === "running" || data.status === "stopping";
-    btnConvert.disabled = isRunning;
-    btnRotate.disabled = isRunning;
-    btnStop.disabled = !isRunning;
+    const isConvert = data.current_script === "convert";
+    const isRotate = data.current_script === "rotate";
 
-    // Download button visibility
+    // ─── Step 1 (Convert) controls ───
+    const btnConvert = document.getElementById("btnConvert");
+    const btnStopConvert = document.getElementById("btnStopConvert");
+    const prog1 = document.getElementById("progressSection1");
+    const badge1 = document.getElementById("step1Complete");
+
+    btnConvert.disabled = isRunning;
+    btnStopConvert.disabled = !(isRunning && isConvert);
+
+    if (isConvert && (data.status === "running" || data.status === "finished")) {
+        prog1.style.display = "block";
+        document.getElementById("progressFill1").style.width = data.progress + "%";
+        document.getElementById("progressPercent1").textContent = data.progress + "%";
+        let d1 = "";
+        if (data.processed_images > 0) d1 += `${data.processed_images}`;
+        if (data.total_images > 0) d1 += ` / ${data.total_images} pages`;
+        document.getElementById("progressDetail1").textContent = d1;
+    }
+
+    // When conversion finishes → show completion badge, then switch to Step 2
+    if (isConvert && data.status === "finished") {
+        badge1.style.display = "flex";
+        setTimeout(() => showStep2(), 1500);
+    }
+
+    // ─── Step 2 (Rotate) controls ───
+    const btnRotate = document.getElementById("btnRotate");
+    const btnStopRotate = document.getElementById("btnStopRotate");
+    const prog2 = document.getElementById("progressSection2");
     const btnDownload = document.getElementById("btnDownload");
-    if (data.status === "finished") {
+
+    btnRotate.disabled = isRunning;
+    btnStopRotate.disabled = !(isRunning && isRotate);
+
+    if (isRotate && (data.status === "running" || data.status === "finished")) {
+        prog2.style.display = "block";
+        document.getElementById("progressFill2").style.width = data.progress + "%";
+        document.getElementById("progressPercent2").textContent = data.progress + "%";
+        let d2 = "";
+        if (data.processed_images > 0) d2 += `${data.processed_images}`;
+        if (data.total_images > 0) d2 += ` / ${data.total_images} images`;
+        if (data.blank_pages > 0) d2 += ` · ${data.blank_pages} blank`;
+        if (data.failed_images > 0) d2 += ` · ${data.failed_images} failed`;
+        document.getElementById("progressDetail2").textContent = d2;
+    }
+
+    // Download button after rotation completes
+    if (isRotate && data.status === "finished") {
         btnDownload.style.display = "flex";
     } else if (data.status === "running") {
         btnDownload.style.display = "none";
-    }
-
-    // Progress
-    if (data.status === "running" || data.status === "finished") {
-        progressSection.style.display = "block";
-        document.getElementById("progressFill").style.width = data.progress + "%";
-        document.getElementById("progressPercent").textContent = data.progress + "%";
-        const script = data.current_script === "convert" ? "PDF Conversion" : "Auto Rotation";
-        document.getElementById("progressLabel").textContent = script;
-        let detail = "";
-        if (data.processed_images > 0) detail += `${data.processed_images}`;
-        if (data.total_images > 0) detail += ` / ${data.total_images} images`;
-        if (data.blank_pages > 0) detail += ` · ${data.blank_pages} blank`;
-        if (data.failed_images > 0) detail += ` · ${data.failed_images} failed`;
-        document.getElementById("progressDetail").textContent = detail;
-    } else {
-        progressSection.style.display = "none";
     }
 }
 
