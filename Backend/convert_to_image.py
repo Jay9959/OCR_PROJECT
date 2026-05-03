@@ -11,8 +11,8 @@ from tqdm import tqdm
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # These will be updated by the Dashboard UI or Environment Variables
-INPUT_FOLDER = r"D:\trial"
-OUTPUT_FOLDER = r"D:\trial\output"
+INPUT_FOLDER = os.environ.get("INPUT_FOLDER", r"D:\trial")
+OUTPUT_FOLDER = os.environ.get("PDF_PAGE_FOLDER", r"D:\trial\output")
 
 # image quality settings
 ZOOM_X = 2.0   # 2.0 = good quality
