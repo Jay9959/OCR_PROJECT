@@ -12,7 +12,7 @@ let currentConfig = {};
 document.addEventListener("DOMContentLoaded", () => {
     fetchStatus();
     fetchOutputStats();
-    fetchConfig();
+
     statusInterval = setInterval(() => {
         fetchStatus();
         fetchOutputStats();
@@ -87,8 +87,6 @@ async function fetchConfig() {
     try {
         const res = await fetch("/api/config");
         currentConfig = await res.json();
-        renderConvertConfig(currentConfig);
-        renderRotateConfig(currentConfig);
         renderActionButtons(currentConfig);
     } catch (e) { /* silent */ }
 }
@@ -271,87 +269,7 @@ function escapeHtml(text) {
     return d.innerHTML;
 }
 
-// ── Config Panels (Separate) ────────────────────────
-function togglePanel(panelId) {
-    const body = document.getElementById(panelId);
-    body.classList.toggle("open");
-    // Rotate the toggle button arrow
-    const btn = body.parentElement.querySelector(".btn-icon");
-    if (btn) btn.style.transform = body.classList.contains("open") ? "rotate(180deg)" : "";
-}
 
-function renderConvertConfig(cfg) {
-    const grid = document.getElementById("convertConfigGrid");
-    const fields = [
-        { key: "CONVERT_INPUT", label: "PDF Input Folder" },
-        { key: "CONVERT_OUTPUT", label: "Images Output Folder" },
-    ];
-    grid.innerHTML = fields.map(f => `
-        <div class="config-item">
-            <label>${f.label}</label>
-            <input type="text" id="cfg_${f.key}" value="${escapeHtml(cfg[f.key] || "")}" />
-        </div>
-    `).join("");
-}
-
-function renderRotateConfig(cfg) {
-    const grid = document.getElementById("rotateConfigGrid");
-    const fields = [
-        { key: "INPUT_FOLDER", label: "Input Images Folder" },
-        { key: "TEMP_FIXED_FOLDER", label: "Output Folder" },
-        { key: "BLANK_PAGES_FOLDER", label: "Blank Pages Folder" },
-        { key: "OUTPUT_PDF", label: "Output PDF Path" },
-        { key: "CHECKPOINT_FILE", label: "Checkpoint File" },
-    ];
-    grid.innerHTML = fields.map(f => `
-        <div class="config-item">
-            <label>${f.label}</label>
-            <input type="text" id="cfg_${f.key}" value="${escapeHtml(cfg[f.key] || "")}" />
-        </div>
-    `).join("");
-}
-
-async function saveConvertConfig() {
-    const data = {};
-    ["CONVERT_INPUT", "CONVERT_OUTPUT"].forEach(k => {
-        const el = document.getElementById("cfg_" + k);
-        if (el) data[k] = el.value;
-    });
-    try {
-        const res = await fetch("/api/update-convert-config", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(data)
-        });
-        const result = await res.json();
-        if (result.error) showToast("Error: " + result.error, "error");
-        else showToast("PDF config saved!", "success");
-        fetchConfig();
-    } catch (e) {
-        showToast("Failed to save config", "error");
-    }
-}
-
-async function saveRotateConfig() {
-    const data = {};
-    ["INPUT_FOLDER","TEMP_FIXED_FOLDER","BLANK_PAGES_FOLDER","OUTPUT_PDF","CHECKPOINT_FILE"].forEach(k => {
-        const el = document.getElementById("cfg_" + k);
-        if (el) data[k] = el.value;
-    });
-    try {
-        const res = await fetch("/api/update-config", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(data)
-        });
-        const result = await res.json();
-        if (result.error) showToast("Error: " + result.error, "error");
-        else showToast("Rotate config saved!", "success");
-        fetchConfig();
-    } catch (e) {
-        showToast("Failed to save config", "error");
-    }
-}
 
 // ── Quick Action Buttons ────────────────────────────
 function renderActionButtons(cfg) {
