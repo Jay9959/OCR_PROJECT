@@ -10,7 +10,7 @@ from tqdm import tqdm
 # =========================
 BASE_DIR = Path(__file__).resolve().parent.parent
 INPUT_FOLDER = BASE_DIR / "Backend" / "input"
-OUTPUT_FOLDER = BASE_DIR / "backend" / "pdf_page"
+OUTPUT_FOLDER = BASE_DIR / "Backend" / "pdf_page"
 
 # image quality settings
 ZOOM_X = 2.0   # 2.0 = good quality

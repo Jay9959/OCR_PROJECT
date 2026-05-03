@@ -48,7 +48,7 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 # CONFIG — edit these paths
 # ================================================================
 BASE_DIR = Path(__file__).resolve().parent.parent
-INPUT_FOLDER = BASE_DIR / "backend" / "pdf_page"
+INPUT_FOLDER = BASE_DIR / "Backend" / "pdf_page"
 TEMP_FIXED_FOLDER = BASE_DIR / "Output" / "temp_fixed"
 BLANK_PAGES_FOLDER = BASE_DIR / "Output" / "CO_TEC1234_4567_blank_pages"  # NEW
 REVIEW_FOLDER = BASE_DIR / "Output" / "CO_TEC1234_4567_review"
