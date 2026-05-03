@@ -9,8 +9,20 @@ from tqdm import tqdm
 # CONFIG
 # =========================
 BASE_DIR = Path(__file__).resolve().parent.parent
-INPUT_FOLDER = BASE_DIR / "Backend" / "input"
-OUTPUT_FOLDER = BASE_DIR / "Backend" / "pdf_page"
+
+def get_path(env_key, default_path):
+    path_str = os.environ.get(env_key, str(default_path))
+    p = Path(path_str)
+    # If path is absolute but doesn't exist (like D:\ on Linux), fallback to default
+    if p.is_absolute() and not p.exists():
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            return Path(default_path)
+    return p
+
+INPUT_FOLDER = get_path("CONVERT_INPUT", BASE_DIR / "Backend" / "input")
+OUTPUT_FOLDER = get_path("CONVERT_OUTPUT", BASE_DIR / "Backend" / "pdf_page")
 
 # image quality settings
 ZOOM_X = 2.0   # 2.0 = good quality

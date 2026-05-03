@@ -48,12 +48,24 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 # CONFIG — edit these paths
 # ================================================================
 BASE_DIR = Path(__file__).resolve().parent.parent
-INPUT_FOLDER = BASE_DIR / "Backend" / "pdf_page"
-TEMP_FIXED_FOLDER = BASE_DIR / "Output" / "temp_fixed"
-BLANK_PAGES_FOLDER = BASE_DIR / "Output" / "CO_TEC1234_4567_blank_pages"  # NEW
-REVIEW_FOLDER = BASE_DIR / "Output" / "CO_TEC1234_4567_review"
-OUTPUT_PDF = BASE_DIR / "Output" / "CO_TEC1234_4567_OUTPUT.pdf"
-CHECKPOINT_FILE = BASE_DIR / "Output" / "CO_TEC1234_4567_checkpoint.json"
+
+def get_path(name, default_val):
+    # This will be updated by app.py, but we add safety here
+    p = Path(default_val)
+    if p.is_absolute() and not p.exists():
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            # If we can't create it (e.g. wrong drive), use relative to project
+            return BASE_DIR / "Backend" / p.name
+    return p
+
+INPUT_FOLDER = get_path("INPUT_FOLDER", BASE_DIR / "Backend" / "pdf_page")
+TEMP_FIXED_FOLDER = get_path("TEMP_FIXED_FOLDER", BASE_DIR / "Output" / "temp_fixed")
+BLANK_PAGES_FOLDER = get_path("BLANK_PAGES_FOLDER", BASE_DIR / "Output" / "CO_TEC1234_4567_blank_pages")
+REVIEW_FOLDER = get_path("REVIEW_FOLDER", BASE_DIR / "Output" / "CO_TEC1234_4567_review")
+OUTPUT_PDF = get_path("OUTPUT_PDF", BASE_DIR / "Output" / "CO_TEC1234_4567_OUTPUT.pdf")
+CHECKPOINT_FILE = get_path("CHECKPOINT_FILE", BASE_DIR / "Output" / "CO_TEC1234_4567_checkpoint.json")
 
 import platform
 if platform.system() == "Windows":
