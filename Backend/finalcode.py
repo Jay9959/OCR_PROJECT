@@ -52,7 +52,7 @@ INPUT_FOLDER = BASE_DIR / "backend" / "pdf_page"
 TEMP_FIXED_FOLDER = BASE_DIR / "Output" / "temp_fixed"
 BLANK_PAGES_FOLDER = BASE_DIR / "Output" / "CO_TEC1234_4567_blank_pages"  # NEW
 REVIEW_FOLDER = BASE_DIR / "Output" / "CO_TEC1234_4567_review"
-OUTPUT_PDF = BASE_DIR / "Output" / "CO_TEC1234_4567_OUTPUT.pdf"     
+OUTPUT_PDF = BASE_DIR / "Output" / "CO_TEC1234_4567_OUTPUT.pdf"
 CHECKPOINT_FILE = BASE_DIR / "Output" / "CO_TEC1234_4567_checkpoint.json"
 
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
@@ -81,7 +81,7 @@ MIN_FINAL_MARGIN = 0.10
 MIN_INK_RATIO = 0.012  # Pages with less ink are considered blank
 BLACK_PAGE_DARK_RATIO = 0.85
 WHITE_PAGE_WHITE_RATIO = 0.970
-LOW_CONTRAST_STD = 18.0  
+LOW_CONTRAST_STD = 18.0
 REVIEW_MARGIN = 0.20
 LOW_TEXT_OCR_MAX = 0.0
 
@@ -193,9 +193,11 @@ def crop_center_area(img: Image.Image) -> Image.Image:
 
     return img.crop((left, top, right, bottom))
 
+
 def page_ink_ratio(img: Image.Image) -> float:
     center = crop_center_area(img)
     return ink_density(binarize(center, 900))
+
 
 def is_blank_page(img: Image.Image) -> bool:
     """
@@ -254,6 +256,8 @@ def is_blank_page(img: Image.Image) -> bool:
 # ================================================================
 # OSD
 # ================================================================
+
+
 def get_osd_fast(img: Image.Image) -> Tuple[int, float]:
     base = resize_keep_ratio(img, 1400)
     attempts = [base, preprocess_for_ocr(base)]
@@ -469,7 +473,7 @@ def classify_page_type(
 # LANDSCAPE TABLE FAST PATH
 # ================================================================
 def _is_landscape_table(img: Image.Image, binary_0: np.ndarray) -> Tuple[bool, int]:
-    w, h = img.size 
+    w, h = img.size
     if w <= h * LANDSCAPE_RATIO_THRESH:
         return False, 0
 
@@ -523,7 +527,7 @@ def detect_rotation(img: Image.Image) -> Tuple[int, float, float]:
     Returns: (angle, margin, ink_ratio)
     """
     ink_ratio = page_ink_ratio(img)
-    
+
     if ink_ratio < MIN_INK_RATIO:
         return 0, 1.0, ink_ratio
 
@@ -692,7 +696,8 @@ def detect_rotation(img: Image.Image) -> Tuple[int, float, float]:
                 raw_scores["proj"][a] * 1.0
             )
 
-        ranked_table = sorted(table_candidates.items(), key=lambda x: x[1], reverse=True)
+        ranked_table = sorted(table_candidates.items(),
+                              key=lambda x: x[1], reverse=True)
         table_best, table_score = ranked_table[0]
         table_second = ranked_table[1][1]
 
@@ -794,10 +799,10 @@ def _worker(args):
 
             # Process rotation for non-blank pages
             angle, margin, ink_ratio = detect_rotation(img)
-            
+
             fixed_img = img if angle == 0 else img.rotate(-angle, expand=True)
             save_ok = save_image_safely(fixed_img, save_path)
-            
+
             if not save_ok:
                 return img_path_str, False, angle, margin, False
 
@@ -1019,11 +1024,11 @@ def main():
 
                         processed_since_ckpt += 1
                         if processed_since_ckpt >= CHECKPOINT_EVERY:
-                            save_checkpoint(CHECKPOINT_FILE, done_set, blank_set)
+                            save_checkpoint(CHECKPOINT_FILE,
+                                            done_set, blank_set)
                             processed_since_ckpt = 0
 
     save_checkpoint(CHECKPOINT_FILE, done_set, blank_set)
-
 
     print("\n" + "═" * 80)
     print("📋 SUMMARY")
@@ -1039,7 +1044,7 @@ def main():
     print(f"   180° : {stats[180]:,}")
     print(f"   270° : {stats[270]:,}")
     print("═" * 80)
-    
+
     # Show folder locations
     print(f"\n📂 OUTPUT FOLDERS CREATED:")
     print(f"   ✓ Fixed Images  : {TEMP_FIXED_FOLDER}")
@@ -1051,6 +1056,4 @@ def main():
     print("📄 PDF creation skipped.")
 
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+if __name__ == "__main__": main()

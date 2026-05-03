@@ -16,6 +16,7 @@ import logging
 from pathlib import Path
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, Response, send_from_directory
+from flask_cors import CORS
 
 
 # ── Suppress noisy polling logs ───────────────────────
@@ -30,11 +31,14 @@ class QuietPollFilter(logging.Filter):
                 return False
         return True
 
+
 logging.getLogger("werkzeug").addFilter(QuietPollFilter())
 
 app = Flask(__name__,
             static_folder="static",
             template_folder="templates")
+
+CORS(app, origins=["https://your-vercel-app.vercel.app"])
 
 # ── Paths ─────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -97,29 +101,33 @@ def parse_progress_line(line):
         total = int(tqdm_match.group(2))
         process_state["processed_images"] = current
         if total > 0:
-            process_state["total_images"] = max(process_state["total_images"], total)
+            process_state["total_images"] = max(
+                process_state["total_images"], total)
             process_state["progress"] = min(100, int((current / total) * 100))
-    
+
     # Match total images scan: "Total: 1,234  |  Pending: 500"
     total_match = re.search(r'Total:\s*([\d,]+)', line)
     if total_match:
-        process_state["total_images"] = int(total_match.group(1).replace(',', ''))
+        process_state["total_images"] = int(
+            total_match.group(1).replace(',', ''))
 
     pending_match = re.search(r'Pending:\s*([\d,]+)', line)
     if pending_match:
         pending = int(pending_match.group(1).replace(',', ''))
         if pending == 0 and process_state["total_images"] > 0:
             process_state["progress"] = 100
-    
+
     # Match blank page count
     blank_match = re.search(r'Blank.*?:\s*([\d,]+)', line, re.IGNORECASE)
     if blank_match:
-        process_state["blank_pages"] = int(blank_match.group(1).replace(',', ''))
-    
+        process_state["blank_pages"] = int(
+            blank_match.group(1).replace(',', ''))
+
     # Match failed count
     fail_match = re.search(r'Failed.*?:\s*([\d,]+)', line, re.IGNORECASE)
     if fail_match:
-        process_state["failed_images"] = int(fail_match.group(1).replace(',', ''))
+        process_state["failed_images"] = int(
+            fail_match.group(1).replace(',', ''))
 
     # Match rotation stats
     for angle in ["0", "90", "180", "270"]:
@@ -160,7 +168,7 @@ def stream_output(proc, script_type):
             parse_progress_line(line)
 
         proc.wait()
-        
+
         if proc.returncode == 0:
             process_state["status"] = "finished"
             process_state["progress"] = 100
@@ -244,7 +252,8 @@ def api_config():
                 config[key] = m.group(1)
 
         # Also parse convert_to_image.py config
-        conv_cfg = _parse_script_config(CONVERT_SCRIPT, ["INPUT_FOLDER", "OUTPUT_FOLDER"])
+        conv_cfg = _parse_script_config(
+            CONVERT_SCRIPT, ["INPUT_FOLDER", "OUTPUT_FOLDER"])
         config["CONVERT_INPUT"] = conv_cfg.get("INPUT_FOLDER", "")
         config["CONVERT_OUTPUT"] = conv_cfg.get("OUTPUT_FOLDER", "")
 
@@ -427,6 +436,7 @@ def api_update_convert_config():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
 @app.route("/api/start", methods=["POST"])
 def api_start():
     """Start a processing script."""
@@ -442,7 +452,7 @@ def api_start():
     process_state["start_time"] = time.time()
 
     script = CONVERT_SCRIPT if script_type == "convert" else FINALCODE_SCRIPT
-    
+
     # Find Python executable
     python_exe = sys.executable
 
@@ -466,7 +476,8 @@ def api_start():
         )
         process_state["process"] = proc
 
-        thread = threading.Thread(target=stream_output, args=(proc, script_type), daemon=True)
+        thread = threading.Thread(
+            target=stream_output, args=(proc, script_type), daemon=True)
         thread.start()
 
         return jsonify({"success": True, "pid": proc.pid})
@@ -489,13 +500,13 @@ def api_stop():
             proc.send_signal(signal.CTRL_BREAK_EVENT)
         else:
             proc.terminate()
-        
+
         # Give it a few seconds to cleanup
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
-        
+
         process_state["status"] = "idle"
         process_state["end_time"] = time.time()
         return jsonify({"success": True})
@@ -554,7 +565,8 @@ def api_output_stats():
         if PDF_PAGE_FOLDER.exists():
             folders = [d for d in PDF_PAGE_FOLDER.iterdir() if d.is_dir()]
             for folder in folders:
-                page_count = sum(1 for f in folder.rglob("*") if f.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"})
+                page_count = sum(1 for f in folder.rglob(
+                    "*") if f.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"})
                 stats["converted_pages"] += page_count
                 stats["converted_folders"].append({
                     "name": folder.name,
@@ -565,9 +577,11 @@ def api_output_stats():
         if OUTPUT_FOLDER.exists():
             for item in OUTPUT_FOLDER.iterdir():
                 if item.is_dir() and not item.name.endswith("_blank_pages"):
-                    stats["output_images"] += sum(1 for f in item.rglob("*") if f.suffix.lower() in {".jpg", ".jpeg", ".png"})
+                    stats["output_images"] += sum(1 for f in item.rglob(
+                        "*") if f.suffix.lower() in {".jpg", ".jpeg", ".png"})
                 elif item.is_dir() and item.name.endswith("_blank_pages"):
-                    stats["blank_pages"] += sum(1 for f in item.rglob("*") if f.suffix.lower() in {".jpg", ".jpeg", ".png"})
+                    stats["blank_pages"] += sum(1 for f in item.rglob(
+                        "*") if f.suffix.lower() in {".jpg", ".jpeg", ".png"})
                 elif item.suffix.lower() == ".pdf":
                     stats["output_pdfs"] += 1
                     stats["output_pdf_list"].append({
@@ -622,5 +636,5 @@ def serve_js():
 
 # ── Run ───────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("\n  [*] OCR Dashboard running at http://localhost:5000\n")
-    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
