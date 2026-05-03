@@ -6,7 +6,7 @@
 let autoScroll = true;
 let eventSource = null;
 let statusInterval = null;
-let currentConfig = {};
+
 
 // ── Init ────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
@@ -83,13 +83,7 @@ async function fetchOutputStats() {
     } catch (e) { /* silent */ }
 }
 
-async function fetchConfig() {
-    try {
-        const res = await fetch("/api/config");
-        currentConfig = await res.json();
-        renderActionButtons(currentConfig);
-    } catch (e) { /* silent */ }
-}
+
 
 // ── Process Control ─────────────────────────────────
 async function startProcess(scriptType) {
@@ -267,38 +261,6 @@ function escapeHtml(text) {
     const d = document.createElement("div");
     d.textContent = text;
     return d.innerHTML;
-}
-
-
-
-// ── Quick Action Buttons ────────────────────────────
-function renderActionButtons(cfg) {
-    const container = document.getElementById("actionButtons");
-    const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
-    const actions = [
-        { label: "Open PDF Input", folder: cfg.CONVERT_INPUT },
-        { label: "Open Converted Pages", folder: cfg.CONVERT_OUTPUT },
-        { label: "Open Rotated Output", folder: cfg.TEMP_FIXED_FOLDER },
-        { label: "Open Blank Pages", folder: cfg.BLANK_PAGES_FOLDER },
-    ];
-    container.innerHTML = actions.map(a => `
-        <button class="action-btn" onclick="openFolder('${escapeHtml(a.folder || "")}')">${folderIcon} ${a.label}</button>
-    `).join("");
-}
-
-async function openFolder(folder) {
-    if (!folder) { showToast("Path not configured", "error"); return; }
-    try {
-        const res = await fetch("/api/open-folder", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ folder })
-        });
-        const data = await res.json();
-        if (data.error) showToast(data.error, "error");
-    } catch (e) {
-        showToast("Failed to open folder", "error");
-    }
 }
 
 // ── Toasts ──────────────────────────────────────────
