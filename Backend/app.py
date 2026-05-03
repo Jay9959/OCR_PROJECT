@@ -15,6 +15,8 @@ import re
 import logging
 from pathlib import Path
 from datetime import datetime
+import shutil
+import tempfile
 from flask import Flask, render_template, request, jsonify, Response, send_from_directory
 from flask_cors import CORS
 
@@ -43,9 +45,21 @@ CORS(app, origins=["https://your-vercel-app.vercel.app"])
 # ── Paths ─────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent.parent
 BACKEND_DIR = BASE_DIR / "Backend"
-INPUT_FOLDER = BASE_DIR / "Backend" / "input"
-PDF_PAGE_FOLDER = BASE_DIR / "pdf_page"
-OUTPUT_FOLDER = BASE_DIR / "Output"
+
+# Use /tmp/uploads on Render (Linux), otherwise use local paths
+if os.name == 'posix':
+    TMP_ROOT = Path("/tmp/ocr_engine")
+    INPUT_FOLDER = TMP_ROOT / "input"
+    PDF_PAGE_FOLDER = TMP_ROOT / "pdf_page"
+    OUTPUT_FOLDER = TMP_ROOT / "Output"
+else:
+    INPUT_FOLDER = BASE_DIR / "Backend" / "input"
+    PDF_PAGE_FOLDER = BASE_DIR / "Backend" / "pdf_page"
+    OUTPUT_FOLDER = BASE_DIR / "Output"
+
+# Ensure directories exist
+for p in [INPUT_FOLDER, PDF_PAGE_FOLDER, OUTPUT_FOLDER]:
+    p.mkdir(parents=True, exist_ok=True)
 
 FINALCODE_SCRIPT = BACKEND_DIR / "finalcode.py"
 CONVERT_SCRIPT = BACKEND_DIR / "convert_to_image.py"
@@ -457,10 +471,20 @@ def api_start():
     python_exe = sys.executable
 
     try:
-        # Force UTF-8 in child process to handle emoji in print() statements
+        # Force UTF-8 and pass dynamic paths
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUTF8"] = "1"
+        
+        # Inject paths for the scripts to use
+        env["INPUT_FOLDER"] = str(INPUT_FOLDER)
+        env["PDF_PAGE_FOLDER"] = str(PDF_PAGE_FOLDER)
+        env["OUTPUT_FOLDER"] = str(OUTPUT_FOLDER)
+        env["TEMP_FIXED_FOLDER"] = str(OUTPUT_FOLDER / "temp_fixed")
+        env["BLANK_PAGES_FOLDER"] = str(OUTPUT_FOLDER / "blank_pages")
+        env["REVIEW_FOLDER"] = str(OUTPUT_FOLDER / "review")
+        env["OUTPUT_PDF"] = str(OUTPUT_FOLDER / "Final_Result.pdf")
+        env["CHECKPOINT_FILE"] = str(OUTPUT_FOLDER / "checkpoint.json")
 
         proc = subprocess.Popen(
             [python_exe, str(script)],
@@ -609,18 +633,54 @@ def api_clear_logs():
     return jsonify({"success": True})
 
 
-@app.route("/api/open-folder", methods=["POST"])
-def api_open_folder():
-    """Open a folder in Windows Explorer."""
-    data = request.json or {}
-    folder = data.get("folder", "")
-    if not folder or not Path(folder).exists():
-        return jsonify({"error": "Folder not found"}), 404
-    try:
-        os.startfile(str(folder))
-        return jsonify({"success": True})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+@app.route("/api/upload", methods=["POST"])
+def api_upload():
+    """Handle file uploads (PDFs or Images)."""
+    if "files" not in request.files:
+        return jsonify({"error": "No files part"}), 400
+
+    files = request.files.getlist("files")
+    if not files or files[0].filename == "":
+        return jsonify({"error": "No selected files"}), 400
+
+    # Clear input folder before new upload to avoid mixing sessions
+    if INPUT_FOLDER.exists():
+        shutil.rmtree(INPUT_FOLDER)
+    INPUT_FOLDER.mkdir(parents=True, exist_ok=True)
+
+    uploaded_count = 0
+    for file in files:
+        if file:
+            filename = file.filename
+            # Handle directory structure if sent via webkitdirectory
+            # filename might be "folder/file.jpg"
+            target_path = INPUT_FOLDER / filename
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            file.save(str(target_path))
+            uploaded_count += 1
+
+    return jsonify({"success": True, "count": uploaded_count})
+
+
+@app.route("/api/download-result")
+def api_download_result():
+    """Zip the output folder and serve it for download."""
+    if not OUTPUT_FOLDER.exists():
+        return jsonify({"error": "Output folder does not exist"}), 404
+
+    # Create a temporary zip file
+    temp_dir = Path(tempfile.gettempdir())
+    zip_path = temp_dir / "OCR_Result"
+    
+    # Remove existing zip if any
+    zip_file = zip_path.with_suffix(".zip")
+    if zip_file.exists():
+        zip_file.unlink()
+
+    # Zip the output folder
+    shutil.make_archive(str(zip_path), 'zip', str(OUTPUT_FOLDER))
+
+    return send_from_directory(temp_dir, "OCR_Result.zip", as_attachment=True)
 
 
 # ── Static files ──────────────────────────────────────────────

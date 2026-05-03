@@ -10,9 +10,9 @@ from tqdm import tqdm
 # =========================
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# These will be updated by the Dashboard UI
-INPUT_FOLDER = Path(r"Backend/input")
-OUTPUT_FOLDER = Path(r"Backend/pdf_page")
+# These will be updated by the Dashboard UI or Environment Variables
+INPUT_FOLDER = Path(os.getenv("INPUT_FOLDER", r"Backend/input"))
+OUTPUT_FOLDER = Path(os.getenv("PDF_PAGE_FOLDER", r"Backend/pdf_page"))
 
 # image quality settings
 ZOOM_X = 2.0   # 2.0 = good quality

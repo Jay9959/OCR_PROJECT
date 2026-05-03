@@ -20,6 +20,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initParticles();
     init3DTilt();
     initCustomCursor();
+    initUploadSystem(); // New: Initialize upload listeners
     document.getElementById("btnAutoScroll").classList.add("active");
     
     // Inject Welcome Art safely
@@ -184,6 +185,14 @@ function updateStatusUI(data) {
     btnConvert.disabled = isRunning;
     btnRotate.disabled = isRunning;
     btnStop.disabled = !isRunning;
+
+    // Download button visibility
+    const btnDownload = document.getElementById("btnDownload");
+    if (data.status === "finished") {
+        btnDownload.style.display = "flex";
+    } else if (data.status === "running") {
+        btnDownload.style.display = "none";
+    }
 
     // Progress
     if (data.status === "running" || data.status === "finished") {
@@ -509,4 +518,94 @@ function initCustomCursor() {
     // Re-attach hover events when DOM changes (like config generation)
     const observer = new MutationObserver(attachHoverEvents);
     observer.observe(document.body, { childList: true, subtree: true });
+}
+
+// ── Upload System ──────────────────────────────────
+let selectedFiles = [];
+
+function initUploadSystem() {
+    const fileInput = document.getElementById("fileInput");
+    const folderInput = document.getElementById("folderInput");
+    const uploadBox = document.getElementById("uploadBox");
+
+    const handleFiles = (files) => {
+        selectedFiles = Array.from(files);
+        if (selectedFiles.length > 0) {
+            document.getElementById("selectedFilesInfo").style.display = "flex";
+            document.getElementById("fileCountText").textContent = `${selectedFiles.length} files selected`;
+            showToast(`${selectedFiles.length} files ready for upload`, "info");
+        }
+    };
+
+    fileInput.addEventListener("change", e => handleFiles(e.target.files));
+    folderInput.addEventListener("change", e => handleFiles(e.target.files));
+
+    // Drag and Drop
+    if (uploadBox) {
+        uploadBox.addEventListener("dragover", e => {
+            e.preventDefault();
+            uploadBox.classList.add("dragover");
+        });
+        ["dragleave", "dragend"].forEach(ev => {
+            uploadBox.addEventListener(ev, () => uploadBox.classList.remove("dragover"));
+        });
+        uploadBox.addEventListener("drop", e => {
+            e.preventDefault();
+            uploadBox.classList.remove("dragover");
+            handleFiles(e.dataTransfer.files);
+        });
+    }
+}
+
+async function uploadFiles() {
+    if (selectedFiles.length === 0) return;
+
+    const btnUpload = document.getElementById("btnUpload");
+    btnUpload.disabled = true;
+    const btnText = btnUpload.querySelector("span");
+    const originalText = btnText.textContent;
+    btnText.textContent = "Uploading...";
+
+    const formData = new FormData();
+    selectedFiles.forEach(file => {
+        // webkitRelativePath used for folders
+        const path = file.webkitRelativePath || file.name;
+        formData.append("files", file, path);
+    });
+
+    try {
+        const res = await fetch("/api/upload", {
+            method: "POST",
+            body: formData
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            showToast(`Successfully uploaded ${data.count} files`, "success");
+            
+            // Auto-start appropriate process
+            const hasPdf = selectedFiles.some(f => f.name.toLowerCase().endsWith(".pdf"));
+            if (hasPdf) {
+                startProcess('convert');
+            } else {
+                startProcess('rotate');
+            }
+            
+            // Reset selection
+            selectedFiles = [];
+            document.getElementById("selectedFilesInfo").style.display = "none";
+        } else {
+            showToast(data.error || "Upload failed", "error");
+        }
+    } catch (e) {
+        showToast("Upload error: " + e.message, "error");
+    } finally {
+        btnUpload.disabled = false;
+        btnText.textContent = originalText;
+    }
+}
+
+async function downloadResult() {
+    showToast("Preparing download...", "info");
+    window.location.href = "/api/download-result";
 }

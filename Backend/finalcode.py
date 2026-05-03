@@ -51,13 +51,13 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 # ================================================================
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# These values are updated by the Dashboard UI
-INPUT_FOLDER = Path(r"Backend/pdf_page")
-TEMP_FIXED_FOLDER = Path(r"Output/temp_fixed")
-BLANK_PAGES_FOLDER = Path(r"Output/CO_TEC1234_4567_blank_pages")
-REVIEW_FOLDER = Path(r"Output/CO_TEC1234_4567_review")
-OUTPUT_PDF = Path(r"Output/CO_TEC1234_4567_OUTPUT.pdf")
-CHECKPOINT_FILE = Path(r"Output/CO_TEC1234_4567_checkpoint.json")
+# These values are updated by the Dashboard UI or Environment Variables
+INPUT_FOLDER = Path(os.getenv("PDF_PAGE_FOLDER", r"Backend/pdf_page"))
+TEMP_FIXED_FOLDER = Path(os.getenv("TEMP_FIXED_FOLDER", r"Output/temp_fixed"))
+BLANK_PAGES_FOLDER = Path(os.getenv("BLANK_PAGES_FOLDER", r"Output/CO_TEC1234_4567_blank_pages"))
+REVIEW_FOLDER = Path(os.getenv("REVIEW_FOLDER", r"Output/CO_TEC1234_4567_review"))
+OUTPUT_PDF = Path(os.getenv("OUTPUT_PDF", r"Output/CO_TEC1234_4567_OUTPUT.pdf"))
+CHECKPOINT_FILE = Path(os.getenv("CHECKPOINT_FILE", r"Output/CO_TEC1234_4567_checkpoint.json"))
 
 import platform
 if platform.system() == "Windows":
