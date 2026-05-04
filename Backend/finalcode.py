@@ -1094,6 +1094,7 @@ FEATURE 4 — Checkpoint includes blank pages:
 
 ================================================================
 """
+import platform
 import os
 import re
 import json
@@ -1116,14 +1117,25 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 # CONFIG — edit these paths
 # ================================================================
 BASE_DIR = Path(__file__).resolve().parent.parent
-INPUT_FOLDER = BASE_DIR / "backend" / "pdf_page"
-TEMP_FIXED_FOLDER = BASE_DIR / "Output" / "temp_fixed"
-BLANK_PAGES_FOLDER = BASE_DIR / "Output" / "CO_TEC1234_4567_blank_pages"  # NEW
-REVIEW_FOLDER = BASE_DIR / "Output" / "CO_TEC1234_4567_review"
-OUTPUT_PDF = BASE_DIR / "Output" / "CO_TEC1234_4567_OUTPUT.pdf"
-CHECKPOINT_FILE = BASE_DIR / "Output" / "CO_TEC1234_4567_checkpoint.json"
 
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# Paths from environment (set by app.py) or fallback to local
+INPUT_FOLDER = Path(os.environ.get("PDF_PAGE_FOLDER",
+                    str(BASE_DIR / "Backend" / "pdf_page")))
+TEMP_FIXED_FOLDER = Path(os.environ.get(
+    "TEMP_FIXED_FOLDER", str(BASE_DIR / "Output" / "temp_fixed")))
+BLANK_PAGES_FOLDER = Path(os.environ.get(
+    "BLANK_PAGES_FOLDER", str(BASE_DIR / "Output" / "blank_pages")))
+REVIEW_FOLDER = Path(os.environ.get(
+    "REVIEW_FOLDER", str(BASE_DIR / "Output" / "review")))
+OUTPUT_PDF = Path(os.environ.get("OUTPUT_PDF", str(
+    BASE_DIR / "Output" / "Final_Result.pdf")))
+CHECKPOINT_FILE = Path(os.environ.get(
+    "CHECKPOINT_FILE", str(BASE_DIR / "Output" / "checkpoint.json")))
+
+if platform.system() == "Windows":
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+else:
+    pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 # ================================================================
 # SETTINGS
@@ -2035,6 +2047,7 @@ def main():
     print(f"  4️⃣  REVIEW     : {REVIEW_FOLDER}")
     print(f"  5️⃣  PDF        : {OUTPUT_PDF}")
     print(f"  6️⃣  CHECKPOINT : {CHECKPOINT_FILE}")
+    print(f"  🖥️  PLATFORM   : {platform.system()}")
     print(f"\n📊 STATISTICS:")
     print(
         f"  Total: {len(image_files):,}  |  Pending: {len(pending):,}  |  Valid: {len(existing_output_files):,}  |  Blank: {len(existing_blank_files):,}")

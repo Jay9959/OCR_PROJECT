@@ -1,4 +1,5 @@
 import os
+import platform
 from pathlib import Path
 import fitz  # PyMuPDF
 from PIL import Image
@@ -69,6 +70,15 @@ def pdf_to_images(pdf_path, output_base_folder):
 def process_all_pdfs():
     input_folder = Path(INPUT_FOLDER)
     output_folder = Path(OUTPUT_FOLDER)
+
+    # Show folder paths in terminal
+    print("\n" + "═" * 60)
+    print("📁 PDF → IMAGE CONVERSION")
+    print("═" * 60)
+    print(f"  📥 INPUT  (PDFs)   : {input_folder}")
+    print(f"  📤 OUTPUT (Images) : {output_folder}")
+    print(f"  🖥️  Platform       : {platform.system()}")
+    print("═" * 60)
 
     # Auto-create input folder if it doesn't exist
     input_folder.mkdir(parents=True, exist_ok=True)
