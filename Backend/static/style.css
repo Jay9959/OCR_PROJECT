@@ -1442,7 +1442,9 @@ body {
   align-items: center;
   justify-content: center;
   transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.8s;
+  cursor: none;
 }
+
 
 .loader-overlay.hidden {
   opacity: 0;
