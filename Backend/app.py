@@ -40,13 +40,18 @@ app = Flask(__name__,
             template_folder="templates")
 
 # ── Paths ─────────────────────────────────────────────────────
-BASE_DIR = Path(__file__).resolve().parent
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(sys.executable).resolve().parent
+    SCRIPT_DIR = Path(sys._MEIPASS)
+else:
+    BASE_DIR = Path(__file__).resolve().parent
+    SCRIPT_DIR = BASE_DIR
 INPUT_FOLDER = BASE_DIR / "input"
 PDF_PAGE_FOLDER = BASE_DIR / "pdf_page"
 OUTPUT_FOLDER = BASE_DIR / "Output"
 
-FINALCODE_SCRIPT = BASE_DIR / "finalcode.py"
-CONVERT_SCRIPT = BASE_DIR / "convert_to_image.py"
+FINALCODE_SCRIPT = SCRIPT_DIR / "finalcode.py"
+CONVERT_SCRIPT = SCRIPT_DIR / "convert_to_image.py"
 
 # ── Process State ─────────────────────────────────────────────
 process_state = {
@@ -455,7 +460,7 @@ def api_start():
         env["PYTHONUTF8"] = "1"
 
         proc = subprocess.Popen(
-            [python_exe, str(script)],
+            [python_exe, "--worker", script_type] if getattr(sys, "frozen", False) else [python_exe, str(script)],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             stdin=subprocess.PIPE,
@@ -688,5 +693,11 @@ def serve_js():
 
 # ── Run ───────────────────────────────────────────────────────
 if __name__ == "__main__":
+    import runpy
+    if "--worker" in sys.argv:
+        worker_type = sys.argv[sys.argv.index("--worker") + 1]
+        worker_script = CONVERT_SCRIPT if worker_type == "convert" else FINALCODE_SCRIPT
+        runpy.run_path(str(worker_script), run_name="__main__")
+        sys.exit(0)
     print("\n  [*] OCR Dashboard running at http://localhost:5000\n")
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
