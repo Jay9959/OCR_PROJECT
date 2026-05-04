@@ -29,6 +29,8 @@ FEATURE 4 — Checkpoint includes blank pages:
 import os
 import re
 import json
+import sys
+import shutil
 import logging
 import traceback
 from pathlib import Path
@@ -47,15 +49,23 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 # ================================================================
 # CONFIG — edit these paths
 # ================================================================
-BASE_DIR = Path(__file__).resolve().parent.parent
-INPUT_FOLDER = BASE_DIR / "backend" / "pdf_page"
-TEMP_FIXED_FOLDER = BASE_DIR / "Output" / "temp_fixed"
-BLANK_PAGES_FOLDER = BASE_DIR / "Output" / "CO_TEC1234_4567_blank_pages"  # NEW
-REVIEW_FOLDER = BASE_DIR / "Output" / "CO_TEC1234_4567_review"
-OUTPUT_PDF = BASE_DIR / "Output" / "CO_TEC1234_4567_OUTPUT.pdf"     
-CHECKPOINT_FILE = BASE_DIR / "Output" / "CO_TEC1234_4567_checkpoint.json"
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(sys.executable).resolve().parent
+else:
+    BASE_DIR = Path(__file__).resolve().parent
 
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+INPUT_FOLDER = BASE_DIR / "pdf_page"
+TEMP_FIXED_FOLDER = BASE_DIR / "Output" / "temp_fixed"
+BLANK_PAGES_FOLDER = BASE_DIR / "Output" / "blank_pages"
+REVIEW_FOLDER = BASE_DIR / "Output" / "review"
+OUTPUT_PDF = BASE_DIR / "Output" / "output.pdf"
+CHECKPOINT_FILE = BASE_DIR / "Output" / "checkpoint.json"
+
+tesseract_path = shutil.which("tesseract")
+if tesseract_path:
+    pytesseract.pytesseract.tesseract_cmd = tesseract_path
+else:
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 # ================================================================
 # SETTINGS
@@ -1052,5 +1062,4 @@ def main():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    main()

@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 import fitz  # PyMuPDF
 from PIL import Image
@@ -8,9 +9,13 @@ from tqdm import tqdm
 # =========================
 # CONFIG
 # =========================
-BASE_DIR = Path(__file__).resolve().parent.parent
-INPUT_FOLDER = BASE_DIR / "Backend" / "input"
-OUTPUT_FOLDER = BASE_DIR / "backend" / "pdf_page"
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(sys.executable).resolve().parent
+else:
+    BASE_DIR = Path(__file__).resolve().parent
+
+INPUT_FOLDER = BASE_DIR / "input"
+OUTPUT_FOLDER = BASE_DIR / "pdf_page"
 
 # image quality settings
 ZOOM_X = 2.0   # 2.0 = good quality

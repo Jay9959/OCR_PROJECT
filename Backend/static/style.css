@@ -1576,3 +1576,452 @@ body {
   border-radius: 10px;
   transition: width 0.1s linear;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   PIPELINE UI — Step Flow
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Step Indicator ── */
+.step-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 24px;
+  padding: 4px 0;
+}
+
+.step-dot {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  display: grid;
+  place-items: center;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+
+.step-dot span {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  transition: color 0.3s;
+}
+
+.step-dot.active {
+  background: var(--gradient-primary);
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 20px var(--glow-blue);
+  animation: stepPulse 2s ease-in-out infinite;
+}
+
+.step-dot.active span {
+  color: white;
+}
+
+.step-dot.completed {
+  background: var(--gradient-success);
+  border-color: var(--accent-emerald);
+  box-shadow: 0 0 15px var(--glow-emerald);
+}
+
+.step-dot.completed span {
+  color: white;
+}
+
+.step-label {
+  position: absolute;
+  bottom: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.55rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: color 0.3s;
+}
+
+.step-dot.active .step-label {
+  color: var(--accent-blue);
+}
+
+.step-dot.completed .step-label {
+  color: var(--accent-emerald);
+}
+
+.step-line {
+  width: 40px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  transition: background 0.4s;
+  flex-shrink: 0;
+}
+
+.step-line.completed {
+  background: linear-gradient(90deg, var(--accent-emerald), var(--accent-cyan));
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+}
+
+@keyframes stepPulse {
+  0%, 100% { box-shadow: 0 0 15px var(--glow-blue); }
+  50% { box-shadow: 0 0 30px var(--glow-blue), 0 0 10px var(--glow-purple); }
+}
+
+/* ── Pipeline Steps ── */
+.pipeline-step {
+  display: none;
+  animation: fadeSlideIn 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.pipeline-step.active {
+  display: block;
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Upload Zone ── */
+.upload-zone {
+  border: 2px dashed rgba(99, 102, 241, 0.25);
+  border-radius: var(--radius-md);
+  padding: 32px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.3s;
+  background: rgba(99, 102, 241, 0.03);
+  position: relative;
+}
+
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: var(--accent-blue);
+  background: rgba(99, 102, 241, 0.08);
+  box-shadow: 0 0 30px rgba(99, 102, 241, 0.15);
+}
+
+.upload-zone.drag-over {
+  border-color: var(--accent-emerald);
+  background: rgba(16, 185, 129, 0.08);
+  box-shadow: 0 0 30px rgba(16, 185, 129, 0.15);
+}
+
+.upload-icon svg {
+  width: 40px;
+  height: 40px;
+  color: var(--accent-blue);
+  opacity: 0.7;
+  transition: all 0.3s;
+}
+
+.upload-zone:hover .upload-icon svg {
+  opacity: 1;
+  transform: translateY(-3px);
+}
+
+.upload-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.upload-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.upload-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* ── File List ── */
+.upload-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.upload-file-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-xs);
+  background: rgba(2, 4, 10, 0.5);
+  border: 1px solid var(--glass-border);
+  font-size: 0.78rem;
+  animation: fadeIn 0.3s ease;
+}
+
+.upload-file-item svg {
+  color: var(--accent-blue);
+  flex-shrink: 0;
+}
+
+.upload-file-name {
+  flex: 1;
+  color: var(--text-primary);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-file-size {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.upload-file-remove {
+  background: none;
+  border: none;
+  color: var(--accent-rose);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.upload-file-remove:hover {
+  background: rgba(244, 63, 94, 0.15);
+}
+
+/* ── Upload / Action Button ── */
+.btn-upload-action {
+  width: 100%;
+  margin-top: 14px;
+  background: var(--gradient-primary);
+  color: white;
+  box-shadow: 0 4px 25px var(--glow-blue);
+  padding: 14px 22px;
+}
+
+.btn-upload-action:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 35px var(--glow-blue), 0 4px 15px rgba(99, 102, 241, 0.4);
+}
+
+.btn-upload-action:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ── Step Card Headers ── */
+.step-card-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.step-card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.step-card-icon svg {
+  width: 22px;
+  height: 22px;
+  color: white;
+}
+
+.step-card-icon.convert-glow {
+  background: var(--gradient-primary);
+  box-shadow: 0 4px 20px var(--glow-blue);
+  animation: iconGlow 2s ease-in-out infinite alternate;
+}
+
+.step-card-icon.rotate-glow {
+  background: var(--gradient-success);
+  box-shadow: 0 4px 20px var(--glow-emerald);
+  animation: iconGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes iconGlow {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.05); }
+}
+
+.step-card-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.step-card-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+}
+
+/* ── Step Progress ── */
+.step-progress {
+  margin-top: 4px;
+}
+
+.step1-fill { background: var(--gradient-primary); }
+.step2-fill { background: var(--gradient-success); }
+
+/* ── Download Section ── */
+.pipeline-step#pipelineStep3 {
+  text-align: center;
+  padding: 10px 0;
+}
+
+.download-complete-icon svg {
+  width: 56px;
+  height: 56px;
+  color: var(--accent-emerald);
+  filter: drop-shadow(0 0 20px rgba(16, 185, 129, 0.5));
+  animation: checkBounce 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes checkBounce {
+  0% { transform: scale(0); opacity: 0; }
+  60% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.download-complete-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 14px 0 20px;
+}
+
+.download-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+  background: var(--gradient-success);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.download-subtitle {
+  font-size: 0.78rem;
+  color: var(--text-tertiary);
+}
+
+.btn-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 16px 24px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, #10b981, #06b6d4, #8b5cf6);
+  background-size: 200% 200%;
+  animation: downloadGradient 3s ease infinite;
+  color: white;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 6px 30px rgba(16, 185, 129, 0.4);
+  transition: all 0.3s;
+  position: relative;
+  overflow: hidden;
+  letter-spacing: 0.5px;
+}
+
+.btn-download:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 40px rgba(16, 185, 129, 0.5), 0 4px 20px rgba(6, 182, 212, 0.3);
+}
+
+.btn-download::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.2), transparent);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.btn-download:hover::before { opacity: 1; }
+
+.btn-download svg {
+  width: 20px;
+  height: 20px;
+}
+
+@keyframes downloadGradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.btn-reset-pipeline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px 20px;
+  border-radius: var(--radius-md);
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  color: var(--accent-blue);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn-reset-pipeline:hover {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: rgba(99, 102, 241, 0.4);
+  transform: translateY(-2px);
+}
+
+.btn-reset-pipeline svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ── Stop Button Inline ── */
+.btn-stop-inline {
+  border-color: rgba(244, 63, 94, 0.3);
+  color: var(--accent-rose);
+}
+
+.btn-stop-inline:hover:not(:disabled) {
+  background: rgba(244, 63, 94, 0.15);
+  border-color: var(--accent-rose);
+  box-shadow: 0 0 15px var(--glow-rose);
+}
+
+.btn-stop-inline:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}

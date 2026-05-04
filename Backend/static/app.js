@@ -1,5 +1,6 @@
 /* ═══════════════════════════════════════════════════
-   OCR Dashboard — Frontend Logic
+   OCR Dashboard — Frontend Logic v3.0
+   Pipeline: Upload → PDF→Images → Auto Rotate → Download
    ═══════════════════════════════════════════════════ */
 
 // ── State ───────────────────────────────────────────
@@ -7,6 +8,9 @@ let autoScroll = true;
 let eventSource = null;
 let statusInterval = null;
 let currentConfig = {};
+let pipelineStep = 0; // 0=upload, 1=converting, 2=rotating, 3=download
+let selectedFiles = [];
+let pipelineAutoChain = false; // auto-start step 2 after step 1
 
 // ── Init ────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
@@ -20,9 +24,9 @@ document.addEventListener("DOMContentLoaded", () => {
     initParticles();
     init3DTilt();
     initCustomCursor();
+    initUploadZone();
     document.getElementById("btnAutoScroll").classList.add("active");
     
-    // Inject Welcome Art safely
     const welcomeArtContainer = document.getElementById("welcomeArt");
     if (welcomeArtContainer) {
         welcomeArtContainer.textContent = [
@@ -32,22 +36,18 @@ document.addEventListener("DOMContentLoaded", () => {
             "|                                                |",
             "|   ==========================================   |",
             "|                                                |",
-            "|    PDF  ->  IMAGES  ->  ROTATE  ->  OUTPUT     |",
+            "|    UPLOAD  →  CONVERT  →  ROTATE  →  DOWNLOAD  |",
             "|                                                |",
-            "|           Ready to process documents           |",
-            "|                                                |",
-            "|     Click [PDF -> Images] or [Auto Rotate]     |",
-            "|              to begin processing               |",
+            "|         Drop PDF files to get started          |",
             "|                                                |",
             "+------------------------------------------------+"
         ].join("\n");
     }
     
-    // Advanced Loader Logic
+    // Loader
     const loader = document.getElementById("loader");
     const loaderPercent = document.getElementById("loader-percentage");
     const loaderFill = document.getElementById("loaderFill");
-    
     if(loader && loaderPercent && loaderFill) {
         let p = 0;
         const interval = setInterval(() => {
@@ -55,15 +55,137 @@ document.addEventListener("DOMContentLoaded", () => {
             if(p >= 100) {
                 p = 100;
                 clearInterval(interval);
-                setTimeout(() => {
-                    loader.classList.add("hidden");
-                }, 500);
+                setTimeout(() => { loader.classList.add("hidden"); }, 500);
             }
             loaderPercent.textContent = p + "%";
             loaderFill.style.width = p + "%";
         }, 40);
     }
 });
+
+// ── Upload Zone ─────────────────────────────────────
+function initUploadZone() {
+    const zone = document.getElementById("uploadZone");
+    const fileInput = document.getElementById("fileInput");
+    const folderInput = document.getElementById("folderInput");
+    if (!zone || !fileInput) return;
+
+    zone.addEventListener("click", () => fileInput.click());
+    zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("drag-over"); });
+    zone.addEventListener("dragleave", () => zone.classList.remove("drag-over"));
+    
+    const handleFiles = (filesList) => {
+        const files = Array.from(filesList).filter(f => f.name.toLowerCase().endsWith(".pdf"));
+        if (files.length) { 
+            // Append rather than replace, to allow mix of files and folders
+            selectedFiles = [...selectedFiles, ...files]; 
+            renderFileList(); 
+        } else {
+            showToast("No valid PDF files found in selection", "error");
+        }
+    };
+
+    zone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        zone.classList.remove("drag-over");
+        handleFiles(e.dataTransfer.files);
+    });
+    
+    fileInput.addEventListener("change", () => {
+        handleFiles(fileInput.files);
+        fileInput.value = ""; // Reset to allow re-selecting same file if removed
+    });
+    
+    if (folderInput) {
+        folderInput.addEventListener("change", () => {
+            handleFiles(folderInput.files);
+            folderInput.value = "";
+        });
+    }
+}
+
+function renderFileList() {
+    const list = document.getElementById("uploadFileList");
+    const btn = document.getElementById("btnUpload");
+    if (!selectedFiles.length) { list.innerHTML = ""; btn.disabled = true; return; }
+    btn.disabled = false;
+    list.innerHTML = selectedFiles.map((f, i) => `
+        <div class="upload-file-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+            </svg>
+            <span class="upload-file-name">${escapeHtml(f.name)}</span>
+            <span class="upload-file-size">${(f.size / (1024*1024)).toFixed(1)} MB</span>
+            <button class="upload-file-remove" onclick="removeFile(${i})">✕</button>
+        </div>
+    `).join("");
+}
+
+function removeFile(idx) {
+    selectedFiles.splice(idx, 1);
+    renderFileList();
+}
+
+async function uploadFiles() {
+    if (!selectedFiles.length) return;
+    const btn = document.getElementById("btnUpload");
+    btn.disabled = true;
+    btn.innerHTML = `<div class="loading-spinner"></div><span>Uploading...</span>`;
+
+    const formData = new FormData();
+    selectedFiles.forEach(f => formData.append("files", f));
+
+    try {
+        const res = await fetch("/api/upload", { method: "POST", body: formData });
+        const data = await res.json();
+        if (data.error) { showToast(data.error, "error"); btn.disabled = false; btn.innerHTML = `<span>Upload & Start Processing</span>`; return; }
+        showToast(`Uploaded ${data.count} file(s) successfully`, "success");
+        pipelineAutoChain = true;
+        startPipelineStep(1);
+    } catch (e) {
+        showToast("Upload failed: " + e.message, "error");
+        btn.disabled = false;
+        btn.innerHTML = `<span>Upload & Start Processing</span>`;
+    }
+}
+
+// ── Pipeline Steps ──────────────────────────────────
+function setPipelineStep(step) {
+    pipelineStep = step;
+    for (let i = 0; i <= 3; i++) {
+        const el = document.getElementById("pipelineStep" + i);
+        const dot = document.getElementById("stepDot" + i);
+        if (el) el.classList.toggle("active", i === step);
+        if (dot) {
+            dot.classList.remove("active", "completed");
+            if (i < step) dot.classList.add("completed");
+            else if (i === step) dot.classList.add("active");
+        }
+        if (i > 0) {
+            const line = document.getElementById("stepLine" + i);
+            if (line) line.classList.toggle("completed", i <= step);
+        }
+    }
+}
+
+function startPipelineStep(step) {
+    setPipelineStep(step);
+    clearTerminal();
+    if (step === 1) startProcess("convert");
+    else if (step === 2) startProcess("rotate");
+}
+
+function resetPipeline() {
+    pipelineAutoChain = false;
+    selectedFiles = [];
+    renderFileList();
+    setPipelineStep(0);
+    const btn = document.getElementById("btnUpload");
+    btn.disabled = true;
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span>Upload & Start Processing</span>`;
+    showToast("Pipeline reset — ready for new files", "info");
+}
 
 // ── API Calls ───────────────────────────────────────
 async function fetchStatus() {
@@ -101,11 +223,7 @@ async function startProcess(scriptType) {
             body: JSON.stringify({ script: scriptType })
         });
         const data = await res.json();
-        if (data.error) {
-            showToast(data.error, "error");
-            return;
-        }
-        clearTerminal();
+        if (data.error) { showToast(data.error, "error"); return; }
         showToast(scriptType === "convert" ? "PDF conversion started" : "Auto-rotation started", "success");
         connectSSE();
         fetchStatus();
@@ -116,13 +234,11 @@ async function startProcess(scriptType) {
 
 async function stopProcess() {
     try {
+        pipelineAutoChain = false;
         const res = await fetch("/api/stop", { method: "POST" });
         const data = await res.json();
-        if (data.error) {
-            showToast(data.error, "error");
-        } else {
-            showToast("Process stopped", "info");
-        }
+        if (data.error) showToast(data.error, "error");
+        else showToast("Process stopped", "info");
         fetchStatus();
     } catch (e) {
         showToast("Failed to stop: " + e.message, "error");
@@ -141,14 +257,31 @@ function connectSSE() {
                 eventSource = null;
                 fetchStatus();
                 fetchOutputStats();
+                handleStepComplete(entry.status);
                 return;
             }
             appendLogLine(entry);
-        } catch (e) { /* ignore parse errors */ }
+        } catch (e) { /* ignore */ }
     };
     eventSource.onerror = () => {
         if (eventSource) { eventSource.close(); eventSource = null; }
     };
+}
+
+function handleStepComplete(status) {
+    if (status === "finished") {
+        if (pipelineStep === 1 && pipelineAutoChain) {
+            // Card 1 done → auto start Card 2
+            showToast("PDF conversion complete! Starting Auto Rotate...", "success");
+            setTimeout(() => startPipelineStep(2), 1500);
+        } else if (pipelineStep === 2) {
+            // Card 2 done → show download
+            showToast("All processing complete! Results ready for download.", "success");
+            setPipelineStep(3);
+        }
+    } else if (status === "error") {
+        showToast("Process encountered an error. Check terminal for details.", "error");
+    }
 }
 
 // ── UI Updates ──────────────────────────────────────
@@ -156,50 +289,52 @@ function updateStatusUI(data) {
     const pill = document.getElementById("statusPill");
     const dot = pill.querySelector(".status-text");
     const timer = document.getElementById("navTimer");
-    const btnConvert = document.getElementById("btnConvert");
-    const btnRotate = document.getElementById("btnRotate");
     const btnStop = document.getElementById("btnStop");
-    const progressSection = document.getElementById("progressSection");
 
-    // Status pill
     pill.className = "status-pill";
-    const statusMap = {
-        idle: "Idle", running: "Running", stopping: "Stopping",
-        finished: "Complete", error: "Error"
-    };
+    const statusMap = { idle: "Idle", running: "Running", stopping: "Stopping", finished: "Complete", error: "Error" };
     dot.textContent = statusMap[data.status] || data.status;
     if (data.status === "running") pill.classList.add("running");
     else if (data.status === "error") pill.classList.add("error");
     else if (data.status === "stopping") pill.classList.add("stopping");
 
-    // Timer
     if (data.elapsed > 0) {
         const m = Math.floor(data.elapsed / 60);
         const s = Math.floor(data.elapsed % 60);
         timer.textContent = `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
     }
 
-    // Buttons
     const isRunning = data.status === "running" || data.status === "stopping";
-    btnConvert.disabled = isRunning;
-    btnRotate.disabled = isRunning;
     btnStop.disabled = !isRunning;
 
-    // Progress
+    // Update active step progress
     if (data.status === "running" || data.status === "finished") {
-        progressSection.style.display = "block";
-        document.getElementById("progressFill").style.width = data.progress + "%";
-        document.getElementById("progressPercent").textContent = data.progress + "%";
-        const script = data.current_script === "convert" ? "PDF Conversion" : "Auto Rotation";
-        document.getElementById("progressLabel").textContent = script;
-        let detail = "";
-        if (data.processed_images > 0) detail += `${data.processed_images}`;
-        if (data.total_images > 0) detail += ` / ${data.total_images} images`;
-        if (data.blank_pages > 0) detail += ` · ${data.blank_pages} blank`;
-        if (data.failed_images > 0) detail += ` · ${data.failed_images} failed`;
-        document.getElementById("progressDetail").textContent = detail;
-    } else {
-        progressSection.style.display = "none";
+        const stepNum = pipelineStep;
+        const fillId = stepNum === 1 ? "step1Fill" : "step2Fill";
+        const percentId = stepNum === 1 ? "step1Percent" : "step2Percent";
+        const detailId = stepNum === 1 ? "step1Detail" : "step2Detail";
+        const labelId = stepNum === 1 ? "step1Label" : "step2Label";
+        const statusId = stepNum === 1 ? "step1Status" : "step2Status";
+
+        const fill = document.getElementById(fillId);
+        const pct = document.getElementById(percentId);
+        const detail = document.getElementById(detailId);
+        const label = document.getElementById(labelId);
+        const statusEl = document.getElementById(statusId);
+
+        if (fill) fill.style.width = data.progress + "%";
+        if (pct) pct.textContent = data.progress + "%";
+        if (label) label.textContent = data.current_script === "convert" ? "Converting PDF pages..." : "Rotating images...";
+        if (statusEl) statusEl.textContent = data.status === "finished" ? "✅ Completed!" : (data.current_script === "convert" ? "Running convert_to_image.py..." : "Running finalcode.py...");
+
+        if (detail) {
+            let d = "";
+            if (data.processed_images > 0) d += `${data.processed_images}`;
+            if (data.total_images > 0) d += ` / ${data.total_images} images`;
+            if (data.blank_pages > 0) d += ` · ${data.blank_pages} blank`;
+            if (data.failed_images > 0) d += ` · ${data.failed_images} failed`;
+            detail.textContent = d;
+        }
     }
 }
 
@@ -221,16 +356,12 @@ function appendLogLine(entry) {
     const content = document.getElementById("terminalContent");
     const welcome = content.querySelector(".terminal-welcome");
     if (welcome) welcome.remove();
-
     const line = document.createElement("div");
     line.className = "log-line " + (entry.type || "default");
     line.innerHTML = `<span class="log-time">${entry.time || ""}</span><span class="log-text">${escapeHtml(entry.text || "")}</span>`;
     content.appendChild(line);
-
     const badge = document.getElementById("lineCountBadge");
-    const count = content.querySelectorAll(".log-line").length;
-    badge.textContent = count + " lines";
-
+    badge.textContent = content.querySelectorAll(".log-line").length + " lines";
     if (autoScroll) content.scrollTop = content.scrollHeight;
 }
 
@@ -241,32 +372,20 @@ function clearTerminal() {
     fetch("/api/clear-logs", { method: "POST" });
 }
 
-async function clearLogs() {
-    clearTerminal();
-    showToast("Logs cleared", "info");
-}
+async function clearLogs() { clearTerminal(); showToast("Logs cleared", "info"); }
 
 function toggleAutoScroll() {
     autoScroll = !autoScroll;
-    const btn = document.getElementById("btnAutoScroll");
-    btn.classList.toggle("active", autoScroll);
-    if (autoScroll) {
-        const content = document.getElementById("terminalContent");
-        content.scrollTop = content.scrollHeight;
-    }
+    document.getElementById("btnAutoScroll").classList.toggle("active", autoScroll);
+    if (autoScroll) document.getElementById("terminalContent").scrollTop = document.getElementById("terminalContent").scrollHeight;
 }
 
-function escapeHtml(text) {
-    const d = document.createElement("div");
-    d.textContent = text;
-    return d.innerHTML;
-}
+function escapeHtml(text) { const d = document.createElement("div"); d.textContent = text; return d.innerHTML; }
 
-// ── Config Panels (Separate) ────────────────────────
+// ── Config Panels ───────────────────────────────────
 function togglePanel(panelId) {
     const body = document.getElementById(panelId);
     body.classList.toggle("open");
-    // Rotate the toggle button arrow
     const btn = body.parentElement.querySelector(".btn-icon");
     if (btn) btn.style.transform = body.classList.contains("open") ? "rotate(180deg)" : "";
 }
@@ -304,47 +423,29 @@ function renderRotateConfig(cfg) {
 
 async function saveConvertConfig() {
     const data = {};
-    ["CONVERT_INPUT", "CONVERT_OUTPUT"].forEach(k => {
-        const el = document.getElementById("cfg_" + k);
-        if (el) data[k] = el.value;
-    });
+    ["CONVERT_INPUT", "CONVERT_OUTPUT"].forEach(k => { const el = document.getElementById("cfg_" + k); if (el) data[k] = el.value; });
     try {
-        const res = await fetch("/api/update-convert-config", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(data)
-        });
+        const res = await fetch("/api/update-convert-config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
         const result = await res.json();
         if (result.error) showToast("Error: " + result.error, "error");
         else showToast("PDF config saved!", "success");
         fetchConfig();
-    } catch (e) {
-        showToast("Failed to save config", "error");
-    }
+    } catch (e) { showToast("Failed to save config", "error"); }
 }
 
 async function saveRotateConfig() {
     const data = {};
-    ["INPUT_FOLDER","TEMP_FIXED_FOLDER","BLANK_PAGES_FOLDER","OUTPUT_PDF","CHECKPOINT_FILE"].forEach(k => {
-        const el = document.getElementById("cfg_" + k);
-        if (el) data[k] = el.value;
-    });
+    ["INPUT_FOLDER","TEMP_FIXED_FOLDER","BLANK_PAGES_FOLDER","OUTPUT_PDF","CHECKPOINT_FILE"].forEach(k => { const el = document.getElementById("cfg_" + k); if (el) data[k] = el.value; });
     try {
-        const res = await fetch("/api/update-config", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(data)
-        });
+        const res = await fetch("/api/update-config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
         const result = await res.json();
         if (result.error) showToast("Error: " + result.error, "error");
         else showToast("Rotate config saved!", "success");
         fetchConfig();
-    } catch (e) {
-        showToast("Failed to save config", "error");
-    }
+    } catch (e) { showToast("Failed to save config", "error"); }
 }
 
-// ── Quick Action Buttons ────────────────────────────
+// ── Quick Actions ───────────────────────────────────
 function renderActionButtons(cfg) {
     const container = document.getElementById("actionButtons");
     const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
@@ -362,90 +463,52 @@ function renderActionButtons(cfg) {
 async function openFolder(folder) {
     if (!folder) { showToast("Path not configured", "error"); return; }
     try {
-        const res = await fetch("/api/open-folder", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ folder })
-        });
+        const res = await fetch("/api/open-folder", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ folder }) });
         const data = await res.json();
         if (data.error) showToast(data.error, "error");
-    } catch (e) {
-        showToast("Failed to open folder", "error");
-    }
+    } catch (e) { showToast("Failed to open folder", "error"); }
 }
 
 // ── Toasts ──────────────────────────────────────────
 let _lastToast = { msg: "", time: 0 };
-
 function showToast(msg, type = "info") {
-    // Prevent duplicate toasts within 2 seconds
     const now = Date.now();
     if (_lastToast.msg === msg && (now - _lastToast.time) < 2000) return;
     _lastToast = { msg, time: now };
-
     const container = document.getElementById("toastContainer");
     const toast = document.createElement("div");
     toast.className = "toast " + type;
     toast.textContent = msg;
     container.appendChild(toast);
-    setTimeout(() => {
-        toast.style.opacity = "0";
-        toast.style.transform = "translateX(100%)";
-        toast.style.transition = "all .3s ease";
-        setTimeout(() => toast.remove(), 300);
-    }, 3500);
+    setTimeout(() => { toast.style.opacity = "0"; toast.style.transform = "translateX(100%)"; toast.style.transition = "all .3s ease"; setTimeout(() => toast.remove(), 300); }, 3500);
 }
 
-// ── Background Particles ────────────────────────────
+// ── Particles ───────────────────────────────────────
 function initParticles() {
     const canvas = document.getElementById("particles");
     if (!canvas) return;
     for (let i = 0; i < 25; i++) {
         const dot = document.createElement("div");
-        dot.style.cssText = `
-            position:absolute;
-            width:${2 + Math.random() * 3}px;
-            height:${2 + Math.random() * 3}px;
-            border-radius:50%;
-            background:rgba(108,140,255,${0.05 + Math.random() * 0.1});
-            left:${Math.random() * 100}%;
-            top:${Math.random() * 100}%;
-            animation:float ${8 + Math.random() * 12}s ease-in-out infinite alternate;
-            animation-delay:${-Math.random() * 10}s;
-        `;
+        dot.style.cssText = `position:absolute;width:${2+Math.random()*3}px;height:${2+Math.random()*3}px;border-radius:50%;background:rgba(108,140,255,${0.05+Math.random()*0.1});left:${Math.random()*100}%;top:${Math.random()*100}%;animation:float ${8+Math.random()*12}s ease-in-out infinite alternate;animation-delay:${-Math.random()*10}s;`;
         canvas.appendChild(dot);
-    }
-    if (!document.getElementById("particleStyle")) {
-        const style = document.createElement("style");
-        style.id = "particleStyle";
-        style.textContent = `@keyframes float{0%{transform:translate(0,0)}100%{transform:translate(${-20+Math.random()*40}px,${-30+Math.random()*60}px)}}`;
-        document.head.appendChild(style);
     }
 }
 
-// ── 3D Tilt & Glow Effect ───────────────────────────
+// ── 3D Tilt ─────────────────────────────────────────
 function init3DTilt() {
     const cards = document.querySelectorAll('.stat-card, .card:not(.terminal-card)');
     cards.forEach(card => {
         card.addEventListener('mousemove', e => {
             const rect = card.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            
+            const x = e.clientX - rect.left, y = e.clientY - rect.top;
             card.style.setProperty('--mouse-x', `${x}px`);
             card.style.setProperty('--mouse-y', `${y}px`);
-            
-            const centerX = rect.width / 2;
-            const centerY = rect.height / 2;
-            
-            const rotateX = ((y - centerY) / centerY) * -4;
-            const rotateY = ((x - centerX) / centerX) * 4;
-            
-            card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.02, 1.02, 1.02)`;
+            const rotateX = ((y - rect.height/2) / (rect.height/2)) * -4;
+            const rotateY = ((x - rect.width/2) / (rect.width/2)) * 4;
+            card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.02,1.02,1.02)`;
         });
-        
         card.addEventListener('mouseleave', () => {
-            card.style.transform = `perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)`;
+            card.style.transform = `perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1,1,1)`;
             card.style.setProperty('--mouse-x', `-1000px`);
             card.style.setProperty('--mouse-y', `-1000px`);
         });
@@ -456,15 +519,8 @@ function init3DTilt() {
 function initCustomCursor() {
     const cursor = document.getElementById("cursor");
     if (!cursor) return;
-    
-    // Add class to hide default cursor safely
     document.body.classList.add("custom-cursor-enabled");
-    
-    let mouseX = window.innerWidth / 2;
-    let mouseY = window.innerHeight / 2;
-    let cursorX = mouseX;
-    let cursorY = mouseY;
-    
+    let mouseX = window.innerWidth/2, mouseY = window.innerHeight/2, cursorX = mouseX, cursorY = mouseY;
     function render() {
         cursorX += (mouseX - cursorX) * 0.15;
         cursorY += (mouseY - cursorY) * 0.15;
@@ -472,41 +528,19 @@ function initCustomCursor() {
         requestAnimationFrame(render);
     }
     render();
-    
-    document.addEventListener("mousemove", (e) => {
-        mouseX = e.clientX;
-        mouseY = e.clientY;
-    });
-
+    document.addEventListener("mousemove", (e) => { mouseX = e.clientX; mouseY = e.clientY; });
     const attachHoverEvents = () => {
-        const interactiveElements = document.querySelectorAll("button, a, .card, .stat-card, input, select, .action-btn, .btn-icon, .terminal-content");
-        interactiveElements.forEach(el => {
+        document.querySelectorAll("button, a, .card, .stat-card, input, select, .action-btn, .btn-icon, .terminal-content, .upload-zone").forEach(el => {
             el.addEventListener("mouseenter", () => {
                 document.body.classList.add("cursor-hover");
-                
-                // Determine specific cursor style
-                if (el.id === "btnConvert" || el.id === "btnRotate" || el.classList.contains("btn-save-config")) {
-                    document.body.dataset.cursorStyle = "pulsing-green";
-                } else if (el.classList.contains("btn-danger") || el.textContent.includes("Stop")) {
-                    document.body.dataset.cursorStyle = "target-red";
-                } else if (el.classList.contains("stat-card") || el.classList.contains("config-card")) {
-                    document.body.dataset.cursorStyle = "dashed-spin";
-                } else if (el.classList.contains("terminal-content") || el.tagName.toLowerCase() === 'input') {
-                    document.body.dataset.cursorStyle = "brackets";
-                } else {
-                    document.body.dataset.cursorStyle = "default-hover";
-                }
+                if (el.classList.contains("btn-upload-action") || el.classList.contains("btn-download") || el.classList.contains("btn-save-config")) document.body.dataset.cursorStyle = "pulsing-green";
+                else if (el.classList.contains("btn-danger") || el.classList.contains("btn-stop-inline")) document.body.dataset.cursorStyle = "target-red";
+                else if (el.classList.contains("upload-zone")) document.body.dataset.cursorStyle = "pulsing-green";
+                else document.body.dataset.cursorStyle = "default-hover";
             });
-            el.addEventListener("mouseleave", () => {
-                document.body.classList.remove("cursor-hover");
-                delete document.body.dataset.cursorStyle;
-            });
+            el.addEventListener("mouseleave", () => { document.body.classList.remove("cursor-hover"); delete document.body.dataset.cursorStyle; });
         });
     };
-    
     attachHoverEvents();
-    
-    // Re-attach hover events when DOM changes (like config generation)
-    const observer = new MutationObserver(attachHoverEvents);
-    observer.observe(document.body, { childList: true, subtree: true });
+    new MutationObserver(attachHoverEvents).observe(document.body, { childList: true, subtree: true });
 }

@@ -13,9 +13,12 @@ import threading
 import subprocess
 import re
 import logging
+import shutil
+import zipfile
+import tempfile
 from pathlib import Path
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, Response, send_from_directory
+from flask import Flask, render_template, request, jsonify, Response, send_from_directory, send_file
 
 
 # ── Suppress noisy polling logs ───────────────────────
@@ -37,14 +40,13 @@ app = Flask(__name__,
             template_folder="templates")
 
 # ── Paths ─────────────────────────────────────────────────────
-BASE_DIR = Path(__file__).resolve().parent.parent
-BACKEND_DIR = BASE_DIR / "Backend"
-INPUT_FOLDER = BASE_DIR / "Backend" / "input"
+BASE_DIR = Path(__file__).resolve().parent
+INPUT_FOLDER = BASE_DIR / "input"
 PDF_PAGE_FOLDER = BASE_DIR / "pdf_page"
 OUTPUT_FOLDER = BASE_DIR / "Output"
 
-FINALCODE_SCRIPT = BACKEND_DIR / "finalcode.py"
-CONVERT_SCRIPT = BACKEND_DIR / "convert_to_image.py"
+FINALCODE_SCRIPT = BASE_DIR / "finalcode.py"
+CONVERT_SCRIPT = BASE_DIR / "convert_to_image.py"
 
 # ── Process State ─────────────────────────────────────────────
 process_state = {
@@ -267,7 +269,7 @@ def _parse_script_config(script_path, keys):
         content = f.read()
 
     # Resolve BASE_DIR the same way the scripts do
-    script_base_dir = Path(script_path).resolve().parent.parent
+    script_base_dir = Path(script_path).resolve().parent
 
     for key in keys:
         # Try format 1: raw/quoted string  e.g. INPUT_FOLDER = r"C:\..."
@@ -320,7 +322,7 @@ def api_update_config():
         with open(FINALCODE_SCRIPT, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
-        script_base_dir = Path(FINALCODE_SCRIPT).resolve().parent.parent
+        script_base_dir = Path(FINALCODE_SCRIPT).resolve().parent
 
         config_keys = {
             "INPUT_FOLDER", "TEMP_FIXED_FOLDER", "BLANK_PAGES_FOLDER",
@@ -382,7 +384,7 @@ def api_update_convert_config():
         with open(CONVERT_SCRIPT, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
-        script_base_dir = Path(CONVERT_SCRIPT).resolve().parent.parent
+        script_base_dir = Path(CONVERT_SCRIPT).resolve().parent
 
         key_map = {
             "CONVERT_INPUT": "INPUT_FOLDER",
@@ -460,7 +462,7 @@ def api_start():
             text=True,
             encoding="utf-8",
             errors="replace",
-            cwd=str(BACKEND_DIR),
+            cwd=str(BASE_DIR),
             env=env,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0,
         )
@@ -605,6 +607,70 @@ def api_open_folder():
     try:
         os.startfile(str(folder))
         return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── File Upload ───────────────────────────────────────────────
+@app.route("/api/upload", methods=["POST"])
+def api_upload():
+    """Receive PDF files and save them to the input folder."""
+    if "files" not in request.files:
+        return jsonify({"error": "No files provided"}), 400
+
+    files = request.files.getlist("files")
+    if not files:
+        return jsonify({"error": "No files selected"}), 400
+
+    INPUT_FOLDER.mkdir(parents=True, exist_ok=True)
+
+    saved = 0
+    for f in files:
+        if f.filename and f.filename.lower().endswith(".pdf"):
+            safe_name = Path(f.filename).name
+            f.save(str(INPUT_FOLDER / safe_name))
+            saved += 1
+
+    if saved == 0:
+        return jsonify({"error": "No valid PDF files found"}), 400
+
+    return jsonify({"success": True, "count": saved})
+
+
+# ── Download Results ──────────────────────────────────────────
+@app.route("/api/download-results")
+def api_download_results():
+    """Zip and serve the Output folder."""
+    if not OUTPUT_FOLDER.exists():
+        return jsonify({"error": "Output folder not found"}), 404
+
+    # Check if there are any files
+    output_files = list(OUTPUT_FOLDER.rglob("*"))
+    if not any(f.is_file() for f in output_files):
+        return jsonify({"error": "No output files to download"}), 404
+
+    # Create zip in a temp location inside the project
+    zip_dir = BASE_DIR / "_temp_downloads"
+    zip_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = zip_dir / "OCR_Results.zip"
+
+    # Remove old zip if exists
+    if zip_path.exists():
+        zip_path.unlink()
+
+    try:
+        with zipfile.ZipFile(str(zip_path), 'w', zipfile.ZIP_DEFLATED) as zf:
+            for file_path in output_files:
+                if file_path.is_file():
+                    arcname = file_path.relative_to(OUTPUT_FOLDER)
+                    zf.write(str(file_path), str(arcname))
+
+        return send_file(
+            str(zip_path),
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='OCR_Results.zip'
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
