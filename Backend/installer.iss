@@ -1,7 +1,7 @@
 [Setup]
 AppName=OCR Application
 AppVersion=1.0
-DefaultDirName={pf}\OCR Application
+DefaultDirName=C:\OCR Application
 DefaultGroupName=OCR Application
 OutputDir=C:\Users\DESKTOP\Music\OCR_PROJECT\Backend\installer
 OutputBaseFilename=OCR_APP_Setup
