@@ -25,6 +25,10 @@ document.addEventListener("DOMContentLoaded", () => {
     init3DTilt();
     initCustomCursor();
     initUploadZone();
+    const btnUpload = document.getElementById("btnUpload");
+    if (btnUpload) {
+        btnUpload.addEventListener("click", uploadFiles);
+    }
     document.getElementById("btnAutoScroll").classList.add("active");
     
     const welcomeArtContainer = document.getElementById("welcomeArt");
