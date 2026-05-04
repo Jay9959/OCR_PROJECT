@@ -6,13 +6,13 @@
 let autoScroll = true;
 let eventSource = null;
 let statusInterval = null;
-
+let currentConfig = {};
 
 // ── Init ────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
     fetchStatus();
     fetchOutputStats();
-
+    fetchConfig();
     statusInterval = setInterval(() => {
         fetchStatus();
         fetchOutputStats();
@@ -20,7 +20,6 @@ document.addEventListener("DOMContentLoaded", () => {
     initParticles();
     init3DTilt();
     initCustomCursor();
-    initUploadSystem(); // New: Initialize upload listeners
     document.getElementById("btnAutoScroll").classList.add("active");
     
     // Inject Welcome Art safely
@@ -83,7 +82,15 @@ async function fetchOutputStats() {
     } catch (e) { /* silent */ }
 }
 
-
+async function fetchConfig() {
+    try {
+        const res = await fetch("/api/config");
+        currentConfig = await res.json();
+        renderConvertConfig(currentConfig);
+        renderRotateConfig(currentConfig);
+        renderActionButtons(currentConfig);
+    } catch (e) { /* silent */ }
+}
 
 // ── Process Control ─────────────────────────────────
 async function startProcess(scriptType) {
@@ -144,22 +151,15 @@ function connectSSE() {
     };
 }
 
-// ── Step Card Management ────────────────────────────
-function showStep1() {
-    document.getElementById("cardStep1").classList.remove("step-card-hidden");
-    document.getElementById("cardStep2").classList.add("step-card-hidden");
-}
-
-function showStep2() {
-    document.getElementById("cardStep1").classList.add("step-card-hidden");
-    document.getElementById("cardStep2").classList.remove("step-card-hidden");
-}
-
 // ── UI Updates ──────────────────────────────────────
 function updateStatusUI(data) {
     const pill = document.getElementById("statusPill");
     const dot = pill.querySelector(".status-text");
     const timer = document.getElementById("navTimer");
+    const btnConvert = document.getElementById("btnConvert");
+    const btnRotate = document.getElementById("btnRotate");
+    const btnStop = document.getElementById("btnStop");
+    const progressSection = document.getElementById("progressSection");
 
     // Status pill
     pill.className = "status-pill";
@@ -179,61 +179,27 @@ function updateStatusUI(data) {
         timer.textContent = `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
     }
 
+    // Buttons
     const isRunning = data.status === "running" || data.status === "stopping";
-    const isConvert = data.current_script === "convert";
-    const isRotate = data.current_script === "rotate";
-
-    // ─── Step 1 (Convert) controls ───
-    const btnConvert = document.getElementById("btnConvert");
-    const btnStopConvert = document.getElementById("btnStopConvert");
-    const prog1 = document.getElementById("progressSection1");
-    const badge1 = document.getElementById("step1Complete");
-
     btnConvert.disabled = isRunning;
-    btnStopConvert.disabled = !(isRunning && isConvert);
-
-    if (isConvert && (data.status === "running" || data.status === "finished")) {
-        prog1.style.display = "block";
-        document.getElementById("progressFill1").style.width = data.progress + "%";
-        document.getElementById("progressPercent1").textContent = data.progress + "%";
-        let d1 = "";
-        if (data.processed_images > 0) d1 += `${data.processed_images}`;
-        if (data.total_images > 0) d1 += ` / ${data.total_images} pages`;
-        document.getElementById("progressDetail1").textContent = d1;
-    }
-
-    // When conversion finishes → show completion badge, then switch to Step 2
-    if (isConvert && data.status === "finished") {
-        badge1.style.display = "flex";
-        setTimeout(() => showStep2(), 1500);
-    }
-
-    // ─── Step 2 (Rotate) controls ───
-    const btnRotate = document.getElementById("btnRotate");
-    const btnStopRotate = document.getElementById("btnStopRotate");
-    const prog2 = document.getElementById("progressSection2");
-    const btnDownload = document.getElementById("btnDownload");
-
     btnRotate.disabled = isRunning;
-    btnStopRotate.disabled = !(isRunning && isRotate);
+    btnStop.disabled = !isRunning;
 
-    if (isRotate && (data.status === "running" || data.status === "finished")) {
-        prog2.style.display = "block";
-        document.getElementById("progressFill2").style.width = data.progress + "%";
-        document.getElementById("progressPercent2").textContent = data.progress + "%";
-        let d2 = "";
-        if (data.processed_images > 0) d2 += `${data.processed_images}`;
-        if (data.total_images > 0) d2 += ` / ${data.total_images} images`;
-        if (data.blank_pages > 0) d2 += ` · ${data.blank_pages} blank`;
-        if (data.failed_images > 0) d2 += ` · ${data.failed_images} failed`;
-        document.getElementById("progressDetail2").textContent = d2;
-    }
-
-    // Download button after rotation completes
-    if (isRotate && data.status === "finished") {
-        btnDownload.style.display = "flex";
-    } else if (data.status === "running") {
-        btnDownload.style.display = "none";
+    // Progress
+    if (data.status === "running" || data.status === "finished") {
+        progressSection.style.display = "block";
+        document.getElementById("progressFill").style.width = data.progress + "%";
+        document.getElementById("progressPercent").textContent = data.progress + "%";
+        const script = data.current_script === "convert" ? "PDF Conversion" : "Auto Rotation";
+        document.getElementById("progressLabel").textContent = script;
+        let detail = "";
+        if (data.processed_images > 0) detail += `${data.processed_images}`;
+        if (data.total_images > 0) detail += ` / ${data.total_images} images`;
+        if (data.blank_pages > 0) detail += ` · ${data.blank_pages} blank`;
+        if (data.failed_images > 0) detail += ` · ${data.failed_images} failed`;
+        document.getElementById("progressDetail").textContent = detail;
+    } else {
+        progressSection.style.display = "none";
     }
 }
 
@@ -294,6 +260,118 @@ function escapeHtml(text) {
     const d = document.createElement("div");
     d.textContent = text;
     return d.innerHTML;
+}
+
+// ── Config Panels (Separate) ────────────────────────
+function togglePanel(panelId) {
+    const body = document.getElementById(panelId);
+    body.classList.toggle("open");
+    // Rotate the toggle button arrow
+    const btn = body.parentElement.querySelector(".btn-icon");
+    if (btn) btn.style.transform = body.classList.contains("open") ? "rotate(180deg)" : "";
+}
+
+function renderConvertConfig(cfg) {
+    const grid = document.getElementById("convertConfigGrid");
+    const fields = [
+        { key: "CONVERT_INPUT", label: "PDF Input Folder" },
+        { key: "CONVERT_OUTPUT", label: "Images Output Folder" },
+    ];
+    grid.innerHTML = fields.map(f => `
+        <div class="config-item">
+            <label>${f.label}</label>
+            <input type="text" id="cfg_${f.key}" value="${escapeHtml(cfg[f.key] || "")}" />
+        </div>
+    `).join("");
+}
+
+function renderRotateConfig(cfg) {
+    const grid = document.getElementById("rotateConfigGrid");
+    const fields = [
+        { key: "INPUT_FOLDER", label: "Input Images Folder" },
+        { key: "TEMP_FIXED_FOLDER", label: "Output Folder" },
+        { key: "BLANK_PAGES_FOLDER", label: "Blank Pages Folder" },
+        { key: "OUTPUT_PDF", label: "Output PDF Path" },
+        { key: "CHECKPOINT_FILE", label: "Checkpoint File" },
+    ];
+    grid.innerHTML = fields.map(f => `
+        <div class="config-item">
+            <label>${f.label}</label>
+            <input type="text" id="cfg_${f.key}" value="${escapeHtml(cfg[f.key] || "")}" />
+        </div>
+    `).join("");
+}
+
+async function saveConvertConfig() {
+    const data = {};
+    ["CONVERT_INPUT", "CONVERT_OUTPUT"].forEach(k => {
+        const el = document.getElementById("cfg_" + k);
+        if (el) data[k] = el.value;
+    });
+    try {
+        const res = await fetch("/api/update-convert-config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        if (result.error) showToast("Error: " + result.error, "error");
+        else showToast("PDF config saved!", "success");
+        fetchConfig();
+    } catch (e) {
+        showToast("Failed to save config", "error");
+    }
+}
+
+async function saveRotateConfig() {
+    const data = {};
+    ["INPUT_FOLDER","TEMP_FIXED_FOLDER","BLANK_PAGES_FOLDER","OUTPUT_PDF","CHECKPOINT_FILE"].forEach(k => {
+        const el = document.getElementById("cfg_" + k);
+        if (el) data[k] = el.value;
+    });
+    try {
+        const res = await fetch("/api/update-config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        if (result.error) showToast("Error: " + result.error, "error");
+        else showToast("Rotate config saved!", "success");
+        fetchConfig();
+    } catch (e) {
+        showToast("Failed to save config", "error");
+    }
+}
+
+// ── Quick Action Buttons ────────────────────────────
+function renderActionButtons(cfg) {
+    const container = document.getElementById("actionButtons");
+    const folderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
+    const actions = [
+        { label: "Open PDF Input", folder: cfg.CONVERT_INPUT },
+        { label: "Open Converted Pages", folder: cfg.CONVERT_OUTPUT },
+        { label: "Open Rotated Output", folder: cfg.TEMP_FIXED_FOLDER },
+        { label: "Open Blank Pages", folder: cfg.BLANK_PAGES_FOLDER },
+    ];
+    container.innerHTML = actions.map(a => `
+        <button class="action-btn" onclick="openFolder('${escapeHtml(a.folder || "")}')">${folderIcon} ${a.label}</button>
+    `).join("");
+}
+
+async function openFolder(folder) {
+    if (!folder) { showToast("Path not configured", "error"); return; }
+    try {
+        const res = await fetch("/api/open-folder", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ folder })
+        });
+        const data = await res.json();
+        if (data.error) showToast(data.error, "error");
+    } catch (e) {
+        showToast("Failed to open folder", "error");
+    }
 }
 
 // ── Toasts ──────────────────────────────────────────
@@ -431,94 +509,4 @@ function initCustomCursor() {
     // Re-attach hover events when DOM changes (like config generation)
     const observer = new MutationObserver(attachHoverEvents);
     observer.observe(document.body, { childList: true, subtree: true });
-}
-
-// ── Upload System ──────────────────────────────────
-let selectedFiles = [];
-
-function initUploadSystem() {
-    const fileInput = document.getElementById("fileInput");
-    const folderInput = document.getElementById("folderInput");
-    const uploadBox = document.getElementById("uploadBox");
-
-    const handleFiles = (files) => {
-        selectedFiles = Array.from(files);
-        if (selectedFiles.length > 0) {
-            document.getElementById("selectedFilesInfo").style.display = "flex";
-            document.getElementById("fileCountText").textContent = `${selectedFiles.length} files selected`;
-            showToast(`${selectedFiles.length} files ready for upload`, "info");
-        }
-    };
-
-    fileInput.addEventListener("change", e => handleFiles(e.target.files));
-    folderInput.addEventListener("change", e => handleFiles(e.target.files));
-
-    // Drag and Drop
-    if (uploadBox) {
-        uploadBox.addEventListener("dragover", e => {
-            e.preventDefault();
-            uploadBox.classList.add("dragover");
-        });
-        ["dragleave", "dragend"].forEach(ev => {
-            uploadBox.addEventListener(ev, () => uploadBox.classList.remove("dragover"));
-        });
-        uploadBox.addEventListener("drop", e => {
-            e.preventDefault();
-            uploadBox.classList.remove("dragover");
-            handleFiles(e.dataTransfer.files);
-        });
-    }
-}
-
-async function uploadFiles() {
-    if (selectedFiles.length === 0) return;
-
-    const btnUpload = document.getElementById("btnUpload");
-    btnUpload.disabled = true;
-    const btnText = btnUpload.querySelector("span");
-    const originalText = btnText.textContent;
-    btnText.textContent = "Uploading...";
-
-    const formData = new FormData();
-    selectedFiles.forEach(file => {
-        // webkitRelativePath used for folders
-        const path = file.webkitRelativePath || file.name;
-        formData.append("files", file, path);
-    });
-
-    try {
-        const res = await fetch("/api/upload", {
-            method: "POST",
-            body: formData
-        });
-        const data = await res.json();
-        
-        if (data.success) {
-            showToast(`Successfully uploaded ${data.count} files`, "success");
-            
-            // Auto-start appropriate process
-            const hasPdf = selectedFiles.some(f => f.name.toLowerCase().endsWith(".pdf"));
-            if (hasPdf) {
-                startProcess('convert');
-            } else {
-                startProcess('rotate');
-            }
-            
-            // Reset selection
-            selectedFiles = [];
-            document.getElementById("selectedFilesInfo").style.display = "none";
-        } else {
-            showToast(data.error || "Upload failed", "error");
-        }
-    } catch (e) {
-        showToast("Upload error: " + e.message, "error");
-    } finally {
-        btnUpload.disabled = false;
-        btnText.textContent = originalText;
-    }
-}
-
-async function downloadResult() {
-    showToast("Preparing download...", "info");
-    window.location.href = "/api/download-result";
 }

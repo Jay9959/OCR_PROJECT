@@ -1,5 +1,4 @@
 import os
-import platform
 from pathlib import Path
 import fitz  # PyMuPDF
 from PIL import Image
@@ -10,10 +9,8 @@ from tqdm import tqdm
 # CONFIG
 # =========================
 BASE_DIR = Path(__file__).resolve().parent.parent
-
-# These will be updated by the Dashboard UI or Environment Variables
-INPUT_FOLDER = os.environ.get("INPUT_FOLDER", r"D:\trial")
-OUTPUT_FOLDER = os.environ.get("PDF_PAGE_FOLDER", r"D:\trial\output")
+INPUT_FOLDER = BASE_DIR / "Backend" / "input"
+OUTPUT_FOLDER = BASE_DIR / "backend" / "pdf_page"
 
 # image quality settings
 ZOOM_X = 2.0   # 2.0 = good quality
@@ -71,22 +68,13 @@ def process_all_pdfs():
     input_folder = Path(INPUT_FOLDER)
     output_folder = Path(OUTPUT_FOLDER)
 
-    # Show folder paths in terminal
-    print("\n" + "═" * 60)
-    print("📁 PDF → IMAGE CONVERSION")
-    print("═" * 60)
-    print(f"  📥 INPUT  (PDFs)   : {input_folder}")
-    print(f"  📤 OUTPUT (Images) : {output_folder}")
-    print(f"  🖥️  Platform       : {platform.system()}")
-    print("═" * 60)
-
-    # Auto-create input folder if it doesn't exist
-    input_folder.mkdir(parents=True, exist_ok=True)
+    if not input_folder.exists():
+        raise FileNotFoundError(f"Input folder not found: {input_folder}")
 
     pdf_files = sorted(input_folder.glob("*.pdf"))
 
     if len(pdf_files) == 0:
-        print("❌ No PDF files found in:", input_folder)
+        print("❌ No PDF files found")
         return
 
     output_folder.mkdir(parents=True, exist_ok=True)
@@ -102,5 +90,4 @@ def process_all_pdfs():
 # =========================
 # START
 # =========================
-if __name__ == "__main__":
-    process_all_pdfs()
+process_all_pdfs()

@@ -15,10 +15,7 @@ import re
 import logging
 from pathlib import Path
 from datetime import datetime
-import shutil
-import tempfile
 from flask import Flask, render_template, request, jsonify, Response, send_from_directory
-from flask_cors import CORS
 
 
 # ── Suppress noisy polling logs ───────────────────────
@@ -33,33 +30,18 @@ class QuietPollFilter(logging.Filter):
                 return False
         return True
 
-
 logging.getLogger("werkzeug").addFilter(QuietPollFilter())
 
 app = Flask(__name__,
             static_folder="static",
             template_folder="templates")
 
-CORS(app, origins=["https://your-vercel-app.vercel.app"])
-
 # ── Paths ─────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent.parent
 BACKEND_DIR = BASE_DIR / "Backend"
-
-# Use /tmp/uploads on Render (Linux), otherwise use local paths
-if os.name == 'posix':
-    TMP_ROOT = Path("/tmp/ocr_engine")
-    INPUT_FOLDER = TMP_ROOT / "input"
-    PDF_PAGE_FOLDER = TMP_ROOT / "pdf_page"
-    OUTPUT_FOLDER = TMP_ROOT / "Output"
-else:
-    INPUT_FOLDER = BASE_DIR / "Backend" / "input"
-    PDF_PAGE_FOLDER = BASE_DIR / "Backend" / "pdf_page"
-    OUTPUT_FOLDER = BASE_DIR / "Output"
-
-# Ensure directories exist
-for p in [INPUT_FOLDER, PDF_PAGE_FOLDER, OUTPUT_FOLDER]:
-    p.mkdir(parents=True, exist_ok=True)
+INPUT_FOLDER = BASE_DIR / "Backend" / "input"
+PDF_PAGE_FOLDER = BASE_DIR / "pdf_page"
+OUTPUT_FOLDER = BASE_DIR / "Output"
 
 FINALCODE_SCRIPT = BACKEND_DIR / "finalcode.py"
 CONVERT_SCRIPT = BACKEND_DIR / "convert_to_image.py"
@@ -115,33 +97,29 @@ def parse_progress_line(line):
         total = int(tqdm_match.group(2))
         process_state["processed_images"] = current
         if total > 0:
-            process_state["total_images"] = max(
-                process_state["total_images"], total)
+            process_state["total_images"] = max(process_state["total_images"], total)
             process_state["progress"] = min(100, int((current / total) * 100))
-
+    
     # Match total images scan: "Total: 1,234  |  Pending: 500"
     total_match = re.search(r'Total:\s*([\d,]+)', line)
     if total_match:
-        process_state["total_images"] = int(
-            total_match.group(1).replace(',', ''))
+        process_state["total_images"] = int(total_match.group(1).replace(',', ''))
 
     pending_match = re.search(r'Pending:\s*([\d,]+)', line)
     if pending_match:
         pending = int(pending_match.group(1).replace(',', ''))
         if pending == 0 and process_state["total_images"] > 0:
             process_state["progress"] = 100
-
+    
     # Match blank page count
     blank_match = re.search(r'Blank.*?:\s*([\d,]+)', line, re.IGNORECASE)
     if blank_match:
-        process_state["blank_pages"] = int(
-            blank_match.group(1).replace(',', ''))
-
+        process_state["blank_pages"] = int(blank_match.group(1).replace(',', ''))
+    
     # Match failed count
     fail_match = re.search(r'Failed.*?:\s*([\d,]+)', line, re.IGNORECASE)
     if fail_match:
-        process_state["failed_images"] = int(
-            fail_match.group(1).replace(',', ''))
+        process_state["failed_images"] = int(fail_match.group(1).replace(',', ''))
 
     # Match rotation stats
     for angle in ["0", "90", "180", "270"]:
@@ -182,7 +160,7 @@ def stream_output(proc, script_type):
             parse_progress_line(line)
 
         proc.wait()
-
+        
         if proc.returncode == 0:
             process_state["status"] = "finished"
             process_state["progress"] = 100
@@ -243,8 +221,211 @@ def api_status():
     })
 
 
+@app.route("/api/config")
+def api_config():
+    """Return the current config from finalcode.py."""
+    config = {}
+    try:
+        config = _parse_script_config(FINALCODE_SCRIPT, [
+            "INPUT_FOLDER", "TEMP_FIXED_FOLDER", "BLANK_PAGES_FOLDER",
+            "OUTPUT_PDF", "CHECKPOINT_FILE",
+        ])
+
+        # Extra non-path values
+        with open(FINALCODE_SCRIPT, "r", encoding="utf-8") as f:
+            content = f.read()
+        for key, pattern in {
+            "NUM_WORKERS": r'NUM_WORKERS\s*=.*?(\d+)',
+            "BATCH_SIZE": r'BATCH_SIZE\s*=\s*(\d+)',
+            "OCR_LANG": r'OCR_LANG\s*=\s*"([^"]+)"',
+        }.items():
+            m = re.search(pattern, content)
+            if m:
+                config[key] = m.group(1)
+
+        # Also parse convert_to_image.py config
+        conv_cfg = _parse_script_config(CONVERT_SCRIPT, ["INPUT_FOLDER", "OUTPUT_FOLDER"])
+        config["CONVERT_INPUT"] = conv_cfg.get("INPUT_FOLDER", "")
+        config["CONVERT_OUTPUT"] = conv_cfg.get("OUTPUT_FOLDER", "")
+
+    except Exception as e:
+        config["error"] = str(e)
+
+    return jsonify(config)
 
 
+def _parse_script_config(script_path, keys):
+    """
+    Parse path config values from a Python script.
+    Handles both formats:
+      - r"C:\\some\\path"            (raw string)
+      - BASE_DIR / "sub" / "folder"  (Path expression)
+    Returns resolved absolute path strings.
+    """
+    result = {}
+    with open(script_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # Resolve BASE_DIR the same way the scripts do
+    script_base_dir = Path(script_path).resolve().parent.parent
+
+    for key in keys:
+        # Try format 1: raw/quoted string  e.g. INPUT_FOLDER = r"C:\..."
+        m = re.search(rf'{key}\s*=\s*r?"([^"]+)"', content)
+        if m:
+            result[key] = m.group(1)
+            continue
+
+        # Try format 2: Path expression  e.g. INPUT_FOLDER = BASE_DIR / "sub" / "name"
+        m = re.search(rf'{key}\s*=\s*(.+)', content)
+        if m:
+            expr = m.group(1).strip().rstrip("#").strip()
+            # Remove trailing comments like  # NEW
+            expr = re.sub(r'\s*#.*$', '', expr)
+            try:
+                resolved = _resolve_path_expr(expr, script_base_dir)
+                if resolved:
+                    result[key] = str(resolved)
+                    continue
+            except Exception:
+                pass
+
+    return result
+
+
+def _resolve_path_expr(expr, base_dir):
+    """
+    Resolve a Path expression like: BASE_DIR / "Output" / "folder"
+    Returns a resolved Path or None.
+    """
+    if "BASE_DIR" not in expr:
+        return None
+
+    # Split by /  and extract quoted parts
+    parts = re.findall(r'"([^"]+)"', expr)
+    result = base_dir
+    for part in parts:
+        result = result / part
+    return result
+
+
+@app.route("/api/update-config", methods=["POST"])
+def api_update_config():
+    """Update config values in finalcode.py."""
+    data = request.json
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    try:
+        with open(FINALCODE_SCRIPT, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        script_base_dir = Path(FINALCODE_SCRIPT).resolve().parent.parent
+
+        config_keys = {
+            "INPUT_FOLDER", "TEMP_FIXED_FOLDER", "BLANK_PAGES_FOLDER",
+            "OUTPUT_PDF", "CHECKPOINT_FILE",
+        }
+
+        new_lines = []
+        for line in lines:
+            replaced = False
+            for key in config_keys:
+                value = data.get(key)
+                if not value:
+                    continue
+                # Check if this line defines this key
+                if re.match(rf'^{key}\s*=', line):
+                    # Preserve trailing comment
+                    comment = ""
+                    cm = re.search(r'(\s*#.*)$', line.rstrip('\r\n'))
+                    if cm:
+                        comment = cm.group(1)
+
+                    # Try to write as BASE_DIR / ... if it's under base_dir
+                    new_path = Path(value)
+                    try:
+                        rel = new_path.relative_to(script_base_dir)
+                        parts = rel.parts
+                        expr = "BASE_DIR"
+                        for p in parts:
+                            expr += f' / "{p}"'
+                        new_line = f'{key} = {expr}{comment}\n'
+                    except ValueError:
+                        # Not relative to BASE_DIR, use raw string
+                        escaped = str(value).replace('\\', '\\\\')
+                        new_line = f'{key} = r"{value}"{comment}\n'
+
+                    new_lines.append(new_line)
+                    replaced = True
+                    break
+
+            if not replaced:
+                new_lines.append(line)
+
+        with open(FINALCODE_SCRIPT, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/update-convert-config", methods=["POST"])
+def api_update_convert_config():
+    """Update config values in convert_to_image.py."""
+    data = request.json
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    try:
+        with open(CONVERT_SCRIPT, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        script_base_dir = Path(CONVERT_SCRIPT).resolve().parent.parent
+
+        key_map = {
+            "CONVERT_INPUT": "INPUT_FOLDER",
+            "CONVERT_OUTPUT": "OUTPUT_FOLDER",
+        }
+
+        new_lines = []
+        for line in lines:
+            replaced = False
+            for data_key, file_key in key_map.items():
+                value = data.get(data_key)
+                if not value:
+                    continue
+                if re.match(rf'^{file_key}\s*=', line):
+                    comment = ""
+                    cm = re.search(r'(\s*#.*)$', line.rstrip('\r\n'))
+                    if cm:
+                        comment = cm.group(1)
+
+                    new_path = Path(value)
+                    try:
+                        rel = new_path.relative_to(script_base_dir)
+                        parts = rel.parts
+                        expr = "BASE_DIR"
+                        for p in parts:
+                            expr += f' / "{p}"'
+                        new_line = f'{file_key} = {expr}{comment}\n'
+                    except ValueError:
+                        new_line = f'{file_key} = r"{value}"{comment}\n'
+
+                    new_lines.append(new_line)
+                    replaced = True
+                    break
+
+            if not replaced:
+                new_lines.append(line)
+
+        with open(CONVERT_SCRIPT, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/start", methods=["POST"])
 def api_start():
@@ -261,25 +442,15 @@ def api_start():
     process_state["start_time"] = time.time()
 
     script = CONVERT_SCRIPT if script_type == "convert" else FINALCODE_SCRIPT
-
+    
     # Find Python executable
     python_exe = sys.executable
 
     try:
-        # Force UTF-8 and pass dynamic paths
+        # Force UTF-8 in child process to handle emoji in print() statements
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUTF8"] = "1"
-        
-        # Inject paths for the scripts to use
-        env["INPUT_FOLDER"] = str(INPUT_FOLDER)
-        env["PDF_PAGE_FOLDER"] = str(PDF_PAGE_FOLDER)
-        env["OUTPUT_FOLDER"] = str(OUTPUT_FOLDER)
-        env["TEMP_FIXED_FOLDER"] = str(OUTPUT_FOLDER / "temp_fixed")
-        env["BLANK_PAGES_FOLDER"] = str(OUTPUT_FOLDER / "blank_pages")
-        env["REVIEW_FOLDER"] = str(OUTPUT_FOLDER / "review")
-        env["OUTPUT_PDF"] = str(OUTPUT_FOLDER / "Final_Result.pdf")
-        env["CHECKPOINT_FILE"] = str(OUTPUT_FOLDER / "checkpoint.json")
 
         proc = subprocess.Popen(
             [python_exe, str(script)],
@@ -295,8 +466,7 @@ def api_start():
         )
         process_state["process"] = proc
 
-        thread = threading.Thread(
-            target=stream_output, args=(proc, script_type), daemon=True)
+        thread = threading.Thread(target=stream_output, args=(proc, script_type), daemon=True)
         thread.start()
 
         return jsonify({"success": True, "pid": proc.pid})
@@ -319,13 +489,13 @@ def api_stop():
             proc.send_signal(signal.CTRL_BREAK_EVENT)
         else:
             proc.terminate()
-
+        
         # Give it a few seconds to cleanup
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
-
+        
         process_state["status"] = "idle"
         process_state["end_time"] = time.time()
         return jsonify({"success": True})
@@ -384,8 +554,7 @@ def api_output_stats():
         if PDF_PAGE_FOLDER.exists():
             folders = [d for d in PDF_PAGE_FOLDER.iterdir() if d.is_dir()]
             for folder in folders:
-                page_count = sum(1 for f in folder.rglob(
-                    "*") if f.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"})
+                page_count = sum(1 for f in folder.rglob("*") if f.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"})
                 stats["converted_pages"] += page_count
                 stats["converted_folders"].append({
                     "name": folder.name,
@@ -396,11 +565,9 @@ def api_output_stats():
         if OUTPUT_FOLDER.exists():
             for item in OUTPUT_FOLDER.iterdir():
                 if item.is_dir() and not item.name.endswith("_blank_pages"):
-                    stats["output_images"] += sum(1 for f in item.rglob(
-                        "*") if f.suffix.lower() in {".jpg", ".jpeg", ".png"})
+                    stats["output_images"] += sum(1 for f in item.rglob("*") if f.suffix.lower() in {".jpg", ".jpeg", ".png"})
                 elif item.is_dir() and item.name.endswith("_blank_pages"):
-                    stats["blank_pages"] += sum(1 for f in item.rglob(
-                        "*") if f.suffix.lower() in {".jpg", ".jpeg", ".png"})
+                    stats["blank_pages"] += sum(1 for f in item.rglob("*") if f.suffix.lower() in {".jpg", ".jpeg", ".png"})
                 elif item.suffix.lower() == ".pdf":
                     stats["output_pdfs"] += 1
                     stats["output_pdf_list"].append({
@@ -428,54 +595,18 @@ def api_clear_logs():
     return jsonify({"success": True})
 
 
-@app.route("/api/upload", methods=["POST"])
-def api_upload():
-    """Handle file uploads (PDFs or Images)."""
-    if "files" not in request.files:
-        return jsonify({"error": "No files part"}), 400
-
-    files = request.files.getlist("files")
-    if not files or files[0].filename == "":
-        return jsonify({"error": "No selected files"}), 400
-
-    # Clear input folder before new upload to avoid mixing sessions
-    if INPUT_FOLDER.exists():
-        shutil.rmtree(INPUT_FOLDER)
-    INPUT_FOLDER.mkdir(parents=True, exist_ok=True)
-
-    uploaded_count = 0
-    for file in files:
-        if file:
-            filename = file.filename
-            # Handle directory structure if sent via webkitdirectory
-            # filename might be "folder/file.jpg"
-            target_path = INPUT_FOLDER / filename
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            file.save(str(target_path))
-            uploaded_count += 1
-
-    return jsonify({"success": True, "count": uploaded_count})
-
-
-@app.route("/api/download-result")
-def api_download_result():
-    """Zip the output folder and serve it for download."""
-    if not OUTPUT_FOLDER.exists():
-        return jsonify({"error": "Output folder does not exist"}), 404
-
-    # Create a temporary zip file
-    temp_dir = Path(tempfile.gettempdir())
-    zip_path = temp_dir / "OCR_Result"
-    
-    # Remove existing zip if any
-    zip_file = zip_path.with_suffix(".zip")
-    if zip_file.exists():
-        zip_file.unlink()
-
-    # Zip the output folder
-    shutil.make_archive(str(zip_path), 'zip', str(OUTPUT_FOLDER))
-
-    return send_from_directory(temp_dir, "OCR_Result.zip", as_attachment=True)
+@app.route("/api/open-folder", methods=["POST"])
+def api_open_folder():
+    """Open a folder in Windows Explorer."""
+    data = request.json or {}
+    folder = data.get("folder", "")
+    if not folder or not Path(folder).exists():
+        return jsonify({"error": "Folder not found"}), 404
+    try:
+        os.startfile(str(folder))
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ── Static files ──────────────────────────────────────────────
@@ -491,5 +622,5 @@ def serve_js():
 
 # ── Run ───────────────────────────────────────────────────────
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    print("\n  [*] OCR Dashboard running at http://localhost:5000\n")
+    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
