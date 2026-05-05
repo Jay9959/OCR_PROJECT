@@ -694,10 +694,19 @@ def serve_js():
 # ── Run ───────────────────────────────────────────────────────
 if __name__ == "__main__":
     import runpy
-    if "--worker" in sys.argv:
+    # Debug: log what we received
+    if getattr(sys, "frozen", False):
+        print(f"[WORKER DEBUG] sys.argv: {sys.argv}", file=sys.stderr)
+    
+    # Check for worker mode - handle both frozen EXE and normal python
+    is_worker = "--worker" in sys.argv
+    
+    if is_worker:
         worker_type = sys.argv[sys.argv.index("--worker") + 1]
         worker_script = CONVERT_SCRIPT if worker_type == "convert" else FINALCODE_SCRIPT
+        print(f"[WORKER] Running {worker_type} mode with {worker_script}", file=sys.stderr)
         runpy.run_path(str(worker_script), run_name="__main__")
         sys.exit(0)
+    
     print("\n  [*] OCR Dashboard running at http://localhost:5000\n")
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)

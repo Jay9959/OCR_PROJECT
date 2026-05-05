@@ -12,6 +12,16 @@ pyinstaller --clean --onefile --name OCR_APP ^
 --add-data "convert_to_image.py;." ^
 --hidden-import fitz ^
 --hidden-import pymupdf ^
+--hidden-import tqdm ^
+--hidden-import PIL.Image ^
+--hidden-import PIL.ImageEnhance ^
+--hidden-import PIL.ImageFile ^
+--hidden-import PIL.ImageOps ^
+--hidden-import cv2 ^
+--hidden-import numpy ^
+--hidden-import pytesseract ^
+--hidden-import pdf2image ^
+--hidden-import multiprocessing ^
 app.py
 
 echo ===============================

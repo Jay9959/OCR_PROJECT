@@ -36,7 +36,7 @@ def pdf_to_images(pdf_path, output_base_folder):
     doc = fitz.open(str(pdf_path))
     total_pages = len(doc)
 
-    print(f"\n📄 Processing PDF: {pdf_path.name}")
+    print(f"\n[PDF] Processing PDF: {pdf_path.name}")
     print(f"Total pages: {total_pages}")
 
     matrix = fitz.Matrix(ZOOM_X, ZOOM_Y)
@@ -64,7 +64,7 @@ def pdf_to_images(pdf_path, output_base_folder):
             image.save(out_path, quality=JPG_QUALITY)
 
     doc.close()
-    print(f"✅ Saved all page images in: {pdf_output_folder}")
+    print(f"[OK] Saved all page images in: {pdf_output_folder}")
 
 # =========================
 # PROCESS ALL PDFS
@@ -79,18 +79,18 @@ def process_all_pdfs():
     pdf_files = sorted(input_folder.glob("*.pdf"))
 
     if len(pdf_files) == 0:
-        print("❌ No PDF files found")
+        print("[ERROR] No PDF files found")
         return
 
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    print(f"✅ Found {len(pdf_files)} PDF(s)")
+    print(f"[OK] Found {len(pdf_files)} PDF(s)")
 
     for pdf_file in pdf_files:
         try:
             pdf_to_images(pdf_file, output_folder)
         except Exception as e:
-            print(f"❌ Failed on {pdf_file.name}: {e}")
+            print(f"[ERROR] Failed on {pdf_file.name}: {e}")
 
 # =========================
 # START

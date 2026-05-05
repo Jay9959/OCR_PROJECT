@@ -7,7 +7,7 @@ Recursive: walks all subfolders inside INPUT_FOLDER
 FEATURE: Separates blank/black pages into dedicated folder
 
 MODIFICATIONS FROM v10.2:
-─────────────────────────────────────────────────────────────────
+------------------------------------------------------------------
 FEATURE 1 — Blank page detection and separation:
   Black/blank pages (ink_ratio < MIN_INK_RATIO) are now saved to
   a separate BLANK_PAGES_FOLDER instead of the main output.
@@ -116,7 +116,10 @@ WEIGHTS = {
     "lineaxis":  4.0,
 }
 
-NUM_WORKERS = min(max(1, mp.cpu_count() - 1), 32)
+if getattr(sys, "frozen", False):
+    NUM_WORKERS = 1
+else:
+    NUM_WORKERS = min(max(1, mp.cpu_count() - 1), 32)
 BATCH_SIZE = 64
 CHECKPOINT_EVERY = 500
 
@@ -955,21 +958,21 @@ def main():
     existing_output_files = collect_existing_output_images(fixed_dir)
     existing_blank_files = collect_existing_output_images(blank_dir)
 
-    print("\n" + "═" * 80)
+    print("\n" + "=" * 80)
     print("AUTO IMAGE ROTATION v10.2+ — WITH ENHANCED BLANK PAGE DETECTION")
-    print("═" * 80)
-    print(f"\n📁 PATHS:")
-    print(f"  1️⃣  INPUT      : {INPUT_FOLDER}")
-    print(f"  2️⃣  OUTPUT     : {TEMP_FIXED_FOLDER}")
-    print(f"  3️⃣  BLANK      : {BLANK_PAGES_FOLDER}")
-    print(f"  4️⃣  REVIEW     : {REVIEW_FOLDER}")
-    print(f"  5️⃣  PDF        : {OUTPUT_PDF}")
-    print(f"  6️⃣  CHECKPOINT : {CHECKPOINT_FILE}")
-    print(f"\n📊 STATISTICS:")
+    print("=" * 80)
+    print(f"\n[FOLDER] PATHS:")
+    print(f"  [1]  INPUT      : {INPUT_FOLDER}")
+    print(f"  [2]  OUTPUT     : {TEMP_FIXED_FOLDER}")
+    print(f"  [3]  BLANK      : {BLANK_PAGES_FOLDER}")
+    print(f"  [4]  REVIEW     : {REVIEW_FOLDER}")
+    print(f"  [5]  PDF        : {OUTPUT_PDF}")
+    print(f"  [6]  CHECKPOINT : {CHECKPOINT_FILE}")
+    print(f"\n[STATS] STATISTICS:")
     print(
         f"  Total: {len(image_files):,}  |  Pending: {len(pending):,}  |  Valid: {len(existing_output_files):,}  |  Blank: {len(existing_blank_files):,}")
     print(f"  Workers: {NUM_WORKERS}  |  Batch Size: {BATCH_SIZE}")
-    print("═" * 80 + "\n")
+    print("=" * 80 + "\n")
 
     try:
         print(f"[OK] Tesseract: {pytesseract.get_tesseract_version()}\n")
@@ -994,72 +997,104 @@ def main():
     processed_since_ckpt = 0
 
     if pending:
-        with ProcessPoolExecutor(max_workers=NUM_WORKERS) as executor:
-            for batch_start in range(0, len(pending), BATCH_SIZE):
-                batch = pending[batch_start: batch_start + BATCH_SIZE]
-                futures = {executor.submit(
-                    _worker, make_args(p)): p for p in batch}
+        if getattr(sys, "frozen", False) or NUM_WORKERS == 1:
+            print("[INFO] Running in single-worker EXE mode")
 
-                with tqdm(as_completed(futures), total=len(batch),
-                          desc=f"  Batch {batch_start // BATCH_SIZE + 1}", unit="img") as pbar:
-                    for future in pbar:
-                        img_path_str = str(futures[future])
-                        try:
-                            _, ok, angle, margin, is_blank = future.result(
-                                timeout=IMAGE_TIMEOUT_SEC)
-                        except FuturesTimeout:
-                            log.error(f"TIMEOUT: {img_path_str}")
-                            ok, angle, margin, is_blank = False, 0, 0.0, False
-                        except Exception as e:
-                            log.error(f"EXCEPTION: {img_path_str}: {e}")
-                            ok, angle, margin, is_blank = False, 0, 0.0, False
+            for img_path in tqdm(pending, total=len(pending), desc="Batch 1", unit="img"):
+                img_path_str = str(img_path)
 
-                        if ok:
-                            if is_blank:
-                                blank_count += 1
-                                blank_set.add(img_path_str)
+                try:
+                    _, ok, angle, margin, is_blank = _worker(make_args(img_path))
+                except Exception as e:
+                    log.error(f"EXCEPTION: {img_path_str}: {e}")
+                    ok, angle, margin, is_blank = False, 0, 0.0, False
+
+                if ok:
+                    if is_blank:
+                        blank_count += 1
+                        blank_set.add(img_path_str)
+                    else:
+                        success += 1
+                        stats[angle] += 1
+                        if margin < REVIEW_MARGIN:
+                            review_count += 1
+                        done_set.add(img_path_str)
+                else:
+                    fail += 1
+
+                processed_since_ckpt += 1
+                if processed_since_ckpt >= CHECKPOINT_EVERY:
+                    save_checkpoint(CHECKPOINT_FILE, done_set, blank_set)
+                    processed_since_ckpt = 0
+        else:
+            with ProcessPoolExecutor(max_workers=NUM_WORKERS) as executor:
+                for batch_start in range(0, len(pending), BATCH_SIZE):
+                    batch = pending[batch_start: batch_start + BATCH_SIZE]
+                    futures = {executor.submit(
+                        _worker, make_args(p)): p for p in batch}
+
+                    with tqdm(as_completed(futures), total=len(batch),
+                              desc=f"  Batch {batch_start // BATCH_SIZE + 1}", unit="img") as pbar:
+                        for future in pbar:
+                            img_path_str = str(futures[future])
+                            try:
+                                _, ok, angle, margin, is_blank = future.result(
+                                    timeout=IMAGE_TIMEOUT_SEC)
+                            except FuturesTimeout:
+                                log.error(f"TIMEOUT: {img_path_str}")
+                                ok, angle, margin, is_blank = False, 0, 0.0, False
+                            except Exception as e:
+                                log.error(f"EXCEPTION: {img_path_str}: {e}")
+                                ok, angle, margin, is_blank = False, 0, 0.0, False
+
+                            if ok:
+                                if is_blank:
+                                    blank_count += 1
+                                    blank_set.add(img_path_str)
+                                else:
+                                    success += 1
+                                    stats[angle] += 1
+                                    if margin < REVIEW_MARGIN:
+                                        review_count += 1
+                                    done_set.add(img_path_str)
                             else:
-                                success += 1
-                                stats[angle] += 1
-                                if margin < REVIEW_MARGIN:
-                                    review_count += 1
-                                done_set.add(img_path_str)
-                        else:
-                            fail += 1
+                                fail += 1
 
-                        processed_since_ckpt += 1
-                        if processed_since_ckpt >= CHECKPOINT_EVERY:
-                            save_checkpoint(CHECKPOINT_FILE, done_set, blank_set)
-                            processed_since_ckpt = 0
+                            processed_since_ckpt += 1
+                            if processed_since_ckpt >= CHECKPOINT_EVERY:
+                                save_checkpoint(CHECKPOINT_FILE, done_set, blank_set)
+                                processed_since_ckpt = 0
 
     save_checkpoint(CHECKPOINT_FILE, done_set, blank_set)
 
 
-    print("\n" + "═" * 80)
-    print("📋 SUMMARY")
-    print("═" * 80)
+    print("\n" + "=" * 80)
+    print("[SUMMARY] SUMMARY")
+    print("=" * 80)
     print(f"Total images : {len(image_files):,}")
-    print(f"✅ Processed    : {success:,}    → {TEMP_FIXED_FOLDER}")
-    print(f"⬛ Blank pages  : {blank_count:,}    → {BLANK_PAGES_FOLDER}")
-    print(f"❌ Failed       : {fail:,}")
-    print(f"🔍 Review pages : {review_count:,}   → {REVIEW_FOLDER}")
-    print(f"\n📐 Rotation Stats:")
+    print(f"[OK] Processed    : {success:,}    → {TEMP_FIXED_FOLDER}")
+    print(f"[BLANK] Blank pages  : {blank_count:,}    → {BLANK_PAGES_FOLDER}")
+    print(f"[ERROR] Failed       : {fail:,}")
+    print(f"[REVIEW] Review pages : {review_count:,}   → {REVIEW_FOLDER}")
+    print(f"\n[ROTATION] Rotation Stats:")
     print(f"   0°   : {stats[0]:,}")
     print(f"   90°  : {stats[90]:,}")
     print(f"   180° : {stats[180]:,}")
     print(f"   270° : {stats[270]:,}")
-    print("═" * 80)
+    print("=" * 80)
     
     # Show folder locations
-    print(f"\n📂 OUTPUT FOLDERS CREATED:")
-    print(f"   ✓ Fixed Images  : {TEMP_FIXED_FOLDER}")
-    print(f"   ✓ Blank Pages   : {BLANK_PAGES_FOLDER}")
-    print(f"   ✓ Review Folder : {REVIEW_FOLDER}")
-    print(f"   ✓ Checkpoint    : {CHECKPOINT_FILE}")
+    print(f"\n[FOLDER] OUTPUT FOLDERS CREATED:")
+    print(f"   [OK] Fixed Images  : {TEMP_FIXED_FOLDER}")
+    print(f"   [OK] Blank Pages   : {BLANK_PAGES_FOLDER}")
+    print(f"   [OK] Review Folder : {REVIEW_FOLDER}")
+    print(f"   [OK] Checkpoint    : {CHECKPOINT_FILE}")
 
-    print("\n✅ [DONE] Image processing complete!")
-    print("📄 PDF creation skipped.")
+    print("\n[OK] [DONE] Image processing complete!")
+    print("[PDF] PDF creation skipped.")
 
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
     main()
