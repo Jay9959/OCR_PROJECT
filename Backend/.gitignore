@@ -1,7 +1,4 @@
-﻿Backend/dist/
-Backend/installer/
-Backend/build/
-venv/
+﻿venv/
 __pycache__/
 *.log
 _temp_downloads/

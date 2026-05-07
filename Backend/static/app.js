@@ -8,7 +8,7 @@ let autoScroll = true;
 let eventSource = null;
 let statusInterval = null;
 let currentConfig = {};
-let pipelineStep = 0; // 0=upload, 1=converting, 2=rotating, 3=download
+let pipelineStep = 0; // 0=upload, 1=pdf, 2=images, 3=rotate, 4=download
 let selectedFiles = [];
 let pipelineAutoChain = false; // auto-start step 2 after step 1
 
@@ -34,17 +34,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const welcomeArtContainer = document.getElementById("welcomeArt");
     if (welcomeArtContainer) {
         welcomeArtContainer.textContent = [
-            "+------------------------------------------------+",
-            "|                                                |",
-            "|       OCR ROTATION ENGINE v10.2 PREMIUM        |",
-            "|                                                |",
-            "|   ==========================================   |",
-            "|                                                |",
-            "|    UPLOAD  →  CONVERT  →  ROTATE  →  DOWNLOAD  |",
-            "|                                                |",
-            "|         Drop PDF files to get started          |",
-            "|                                                |",
-            "+------------------------------------------------+"
+            "╔══════════════════════════════════════════════════════════════╗",
+            "║                                                              ║",
+            "║          OCR ROTATION ENGINE v10.2 PREMIUM                   ║",
+            "║                                                              ║",
+            "║  ═════════════════════════════════════════════════════════   ║",
+            "║                                                              ║",
+            "║     UPLOAD  +  CONVERT  +  ROTATE  +  DOWNLOAD               ║",
+            "║                                                              ║",
+            "║           Drop PDF files to get started                      ║",
+            "║                                                              ║",
+            "╚══════════════════════════════════════════════════════════════╝"
         ].join("\n");
     }
     
@@ -52,18 +52,32 @@ document.addEventListener("DOMContentLoaded", () => {
     const loader = document.getElementById("loader");
     const loaderPercent = document.getElementById("loader-percentage");
     const loaderFill = document.getElementById("loaderFill");
-    if(loader && loaderPercent && loaderFill) {
+    const loaderStatus = document.getElementById("loaderStatus");
+    if(loader && loaderPercent && loaderFill && loaderStatus) {
         let p = 0;
+        const statusMessages = [
+            "Initializing...",
+            "Loading modules...",
+            "Preparing OCR engine...",
+            "Setting up environment...",
+            "Finalizing setup...",
+            "Almost ready..."
+        ];
         const interval = setInterval(() => {
-            p += Math.floor(Math.random() * 8) + 2;
+            p += Math.floor(Math.random() * 3) + 1;
             if(p >= 100) {
                 p = 100;
                 clearInterval(interval);
-                setTimeout(() => { loader.classList.add("hidden"); }, 500);
+                loaderStatus.textContent = "Complete!";
+                setTimeout(() => { loader.classList.add("hidden"); }, 800);
             }
             loaderPercent.textContent = p + "%";
             loaderFill.style.width = p + "%";
-        }, 40);
+            
+            // Update status message based on progress
+            const statusIndex = Math.min(Math.floor(p / 20), statusMessages.length - 1);
+            loaderStatus.textContent = statusMessages[statusIndex];
+        }, 80);
     }
 });
 
@@ -262,7 +276,7 @@ async function uploadFiles() {
 // ── Pipeline Steps ──────────────────────────────────
 function setPipelineStep(step) {
     pipelineStep = step;
-    for (let i = 0; i <= 3; i++) {
+    for (let i = 0; i <= 4; i++) {
         const el = document.getElementById("pipelineStep" + i);
         const dot = document.getElementById("stepDot" + i);
         if (el) el.classList.toggle("active", i === step);
@@ -282,7 +296,8 @@ function startPipelineStep(step) {
     setPipelineStep(step);
     clearTerminal();
     if (step === 1) startProcess("convert");
-    else if (step === 2) startProcess("rotate");
+    else if (step === 2) startProcess("convert");
+    else if (step === 3) startProcess("rotate");
 }
 
 function resetPipeline() {
@@ -380,13 +395,17 @@ function connectSSE() {
 function handleStepComplete(status) {
     if (status === "finished") {
         if (pipelineStep === 1 && pipelineAutoChain) {
-            // Card 1 done → auto start Card 2
-            showToast("PDF conversion complete! Starting Auto Rotate...", "success");
+            // PDF done → auto start Images
+            showToast("PDF processing complete! Starting image conversion...", "success");
             setTimeout(() => startPipelineStep(2), 1500);
-        } else if (pipelineStep === 2) {
-            // Card 2 done → show download
+        } else if (pipelineStep === 2 && pipelineAutoChain) {
+            // Images done → auto start Auto Rotate
+            showToast("Image conversion complete! Starting Auto Rotate...", "success");
+            setTimeout(() => startPipelineStep(3), 1500);
+        } else if (pipelineStep === 3) {
+            // Auto Rotate done → show download
             showToast("All processing complete! Results ready for download.", "success");
-            setPipelineStep(3);
+            setPipelineStep(4);
         }
     } else if (status === "error") {
         showToast("Process encountered an error. Check terminal for details.", "error");
@@ -419,11 +438,11 @@ function updateStatusUI(data) {
     // Update active step progress
     if (data.status === "running" || data.status === "finished") {
         const stepNum = pipelineStep;
-        const fillId = stepNum === 1 ? "step1Fill" : "step2Fill";
-        const percentId = stepNum === 1 ? "step1Percent" : "step2Percent";
-        const detailId = stepNum === 1 ? "step1Detail" : "step2Detail";
-        const labelId = stepNum === 1 ? "step1Label" : "step2Label";
-        const statusId = stepNum === 1 ? "step1Status" : "step2Status";
+        const fillId = "step" + stepNum + "Fill";
+        const percentId = "step" + stepNum + "Percent";
+        const detailId = "step" + stepNum + "Detail";
+        const labelId = "step" + stepNum + "Label";
+        const statusId = "step" + stepNum + "Status";
 
         const fill = document.getElementById(fillId);
         const pct = document.getElementById(percentId);
