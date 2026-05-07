@@ -55,11 +55,11 @@ else:
     BASE_DIR = Path(__file__).resolve().parent
 
 INPUT_FOLDER = BASE_DIR / "pdf_page"
-TEMP_FIXED_FOLDER = BASE_DIR / "H:\Output" / "temp_fixed"
-BLANK_PAGES_FOLDER = BASE_DIR / "H:\Output" / "blank_pages"
-REVIEW_FOLDER = BASE_DIR / "H:\Output" / "review"
-OUTPUT_PDF = BASE_DIR / "H:\Output" / "output.pdf"
-CHECKPOINT_FILE = BASE_DIR / "H:\Output" / "checkpoint.json"
+TEMP_FIXED_FOLDER = BASE_DIR / "Output" / "temp_fixed"
+BLANK_PAGES_FOLDER = BASE_DIR / "Output" / "blank_pages"
+REVIEW_FOLDER = BASE_DIR / "Output" / "review"
+OUTPUT_PDF = BASE_DIR / "Output" / "output.pdf"
+CHECKPOINT_FILE = BASE_DIR / "Output" / "checkpoint.json"
 
 tesseract_path = shutil.which("tesseract")
 if tesseract_path:
@@ -855,17 +855,17 @@ def get_expected_output_path(img_path: Path, input_root: Path, output_root: Path
 
 def get_black_page_output_path(img_path: Path, input_root: Path, output_root: Path) -> Path:
     """
-    For black pages, save to temp_fixed with folder name modified to include '_black_page' suffix.
-    Example: NO_ACC1031_3749 -> NO_ACC1031_3749_black_page
+    For black pages, save to temp_fixed with the innermost folder name modified to include '_black_page' suffix.
+    Example: folder/subfolder/NO_ACC1031_3749/page.jpg -> folder/subfolder/NO_ACC1031_3749_black_page/page.jpg
     """
     rel_path = img_path.relative_to(input_root)
     parts = list(rel_path.parts)
     
-    # Modify the folder name (first directory in the relative path)
+    # Modify the folder name (the immediate parent folder of the image)
     if len(parts) > 1:
-        original_folder = parts[0]
+        original_folder = parts[-2]
         modified_folder = f"{original_folder}_black_page"
-        parts[0] = modified_folder
+        parts[-2] = modified_folder
     
     return output_root / Path(*parts)
 

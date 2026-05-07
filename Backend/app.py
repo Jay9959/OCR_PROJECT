@@ -53,6 +53,7 @@ OUTPUT_FOLDER = BASE_DIR / "Output"
 
 FINALCODE_SCRIPT = SCRIPT_DIR / "finalcode.py"
 CONVERT_SCRIPT = SCRIPT_DIR / "convert_to_image.py"
+MERGE_SCRIPT = SCRIPT_DIR / "merge_to_pdf.py"
 
 # ── Process State ─────────────────────────────────────────────
 process_state = {
@@ -459,7 +460,7 @@ def api_start():
     process_state["current_script"] = script_type
     process_state["start_time"] = time.time()
 
-    script = CONVERT_SCRIPT if script_type == "convert" else FINALCODE_SCRIPT
+    script = CONVERT_SCRIPT if script_type == "convert" else (MERGE_SCRIPT if script_type == "merge" else FINALCODE_SCRIPT)
     
     # Find Python executable
     python_exe = sys.executable
@@ -571,13 +572,15 @@ def api_output_stats():
 
         # Count converted pages from pdf_page with hierarchy
         if PDF_PAGE_FOLDER.exists():
+            stats["converted_pages"] = sum(1 for p in PDF_PAGE_FOLDER.rglob("*") if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"})
+
             def scan_folder(path, relative_to):
                 """Recursively scan folder and return tree structure."""
                 result = []
                 for item in sorted(path.iterdir()):
                     if item.is_dir():
                         # Count images in this folder and subfolders
-                        page_count = sum(1 for f in item.rglob("*") if f.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"})
+                        page_count = sum(1 for f in item.rglob("*") if f.is_file() and f.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"})
                         rel_path = str(item.relative_to(relative_to)).replace("\\", "/")
                         children = scan_folder(item, relative_to)
                         result.append({
@@ -589,8 +592,6 @@ def api_output_stats():
                 return result
             
             stats["converted_folders"] = scan_folder(PDF_PAGE_FOLDER, PDF_PAGE_FOLDER)
-            # Also count total pages
-            stats["converted_pages"] = sum(f["pages"] for f in stats["converted_folders"])
 
         # Parse actual output paths from finalcode.py config
         try:
@@ -604,27 +605,31 @@ def api_output_stats():
             output_pdf = BASE_DIR / "Output" / "output.pdf"
 
         # Count output images & blank pages from temp_fixed with hierarchy
-        def scan_output_folders(path, relative_to):
-            """Recursively scan output folders and return tree structure."""
-            result = []
-            for item in sorted(path.iterdir()):
-                if item.is_dir():
-                    img_count = sum(1 for f in item.rglob("*") if f.suffix.lower() in {".jpg", ".jpeg", ".png"})
-                    if item.name.endswith("_black_page"):
-                        stats["blank_pages"] += img_count
-                    else:
-                        stats["output_images"] += img_count
-                    rel_path = str(item.relative_to(relative_to)).replace("\\", "/")
-                    children = scan_output_folders(item, relative_to)
-                    result.append({
-                        "name": item.name,
-                        "path": rel_path,
-                        "pages": img_count,
-                        "children": children
-                    })
-            return result
-
         if temp_fixed.exists():
+            for p in temp_fixed.rglob("*"):
+                if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg", ".png"}:
+                    is_blank = any(part.endswith("_black_page") for part in p.parts)
+                    if is_blank:
+                        stats["blank_pages"] += 1
+                    else:
+                        stats["output_images"] += 1
+
+            def scan_output_folders(path, relative_to):
+                """Recursively scan output folders and return tree structure."""
+                result = []
+                for item in sorted(path.iterdir()):
+                    if item.is_dir():
+                        img_count = sum(1 for f in item.rglob("*") if f.is_file() and f.suffix.lower() in {".jpg", ".jpeg", ".png"})
+                        rel_path = str(item.relative_to(relative_to)).replace("\\", "/")
+                        children = scan_output_folders(item, relative_to)
+                        result.append({
+                            "name": item.name,
+                            "path": rel_path,
+                            "pages": img_count,
+                            "children": children
+                        })
+                return result
+
             stats["output_folders"] = scan_output_folders(temp_fixed, temp_fixed)
 
         # Count output PDFs

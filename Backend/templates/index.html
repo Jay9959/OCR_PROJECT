@@ -24,29 +24,45 @@
     <div class="loader-overlay" id="loader">
         <div class="loader-content">
             <!-- Rocket Icon -->
-            <div class="loader-rocket">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/>
-                    <path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/>
-                    <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/>
-                    <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>
+            <div class="loader-rocket-neon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="url(#rocketGrad)" stroke-width="1.5">
+                    <defs>
+                        <linearGradient id="rocketGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stop-color="#06b6d4" />
+                            <stop offset="50%" stop-color="#3b82f6" />
+                            <stop offset="100%" stop-color="#ec4899" />
+                        </linearGradient>
+                        <filter id="neonGlow" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur stdDeviation="2" result="coloredBlur" />
+                            <feMerge>
+                                <feMergeNode in="coloredBlur" />
+                                <feMergeNode in="SourceGraphic" />
+                            </feMerge>
+                        </filter>
+                    </defs>
+                    <path filter="url(#neonGlow)"
+                        d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
+                    <path filter="url(#neonGlow)"
+                        d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
+                    <path filter="url(#neonGlow)" d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
+                    <path filter="url(#neonGlow)" d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
                 </svg>
             </div>
-            
+
             <!-- Loading Text -->
             <div class="loader-title">Loading OCR Engine...</div>
-            <div class="loader-subtitle">Please wait while we load the OCR engine</div>
-            
-            <!-- Percentage -->
-            <div class="loader-percentage" id="loader-percentage">0%</div>
-            
+            <div class="loader-subtitle">Please wait while we load<br>the OCR engine</div>
+
             <!-- Progress Bar -->
-            <div class="loader-bar-container">
-                <div class="loader-bar-glow" id="loaderFill"></div>
+            <div class="loader-bar-container-neon">
+                <div class="loader-bar-glow-neon" id="loaderFill"></div>
             </div>
-            
+
+            <!-- Percentage -->
+            <div class="loader-percentage-neon" id="loader-percentage">0%</div>
+
             <!-- Status Text -->
-            <div class="loader-status" id="loaderStatus">Initializing...</div>
+            <div class="loader-status-neon" id="loaderStatus">Initializing...</div>
         </div>
     </div>
 
@@ -55,12 +71,12 @@
         <div class="nav-brand">
             <div class="brand-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                    <polyline points="14 2 14 8 20 8"/>
-                    <line x1="16" y1="13" x2="8" y2="13"/>
-                    <line x1="16" y1="17" x2="8" y2="17"/>
-                    <polyline points="10 9 9 9 8 9"/>
-                    <path d="M21 15l-3 3-3-3" opacity="0.5"/>
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="16" y1="13" x2="8" y2="13" />
+                    <line x1="16" y1="17" x2="8" y2="17" />
+                    <polyline points="10 9 9 9 8 9" />
+                    <path d="M21 15l-3 3-3-3" opacity="0.5" />
                 </svg>
             </div>
             <div class="brand-text">
@@ -148,7 +164,8 @@
                             Process Control
                         </h2>
                         <!-- Stop button top-right -->
-                        <button class="btn-icon btn-stop-inline" id="btnStop" onclick="stopProcess()" disabled title="Stop Process">
+                        <button class="btn-icon btn-stop-inline" id="btnStop" onclick="stopProcess()" disabled
+                            title="Stop Process">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <rect x="6" y="6" width="12" height="12" rx="1" />
                             </svg>
@@ -160,22 +177,22 @@
                         <div class="step-indicator">
                             <div class="step-dot active" id="stepDot0">
                                 <span>1</span>
-                                <div class="step-label">Upload</div>
+                                <div class="step-label">Upload PDF</div>
                             </div>
                             <div class="step-line" id="stepLine1"></div>
                             <div class="step-dot" id="stepDot1">
                                 <span>2</span>
-                                <div class="step-label">PDF</div>
+                                <div class="step-label">Convert to Image</div>
                             </div>
                             <div class="step-line" id="stepLine2"></div>
                             <div class="step-dot" id="stepDot2">
                                 <span>3</span>
-                                <div class="step-label">Images</div>
+                                <div class="step-label">Auto Rotate</div>
                             </div>
                             <div class="step-line" id="stepLine3"></div>
                             <div class="step-dot" id="stepDot3">
                                 <span>4</span>
-                                <div class="step-label">Auto Rotate</div>
+                                <div class="step-label">Convert to PDF</div>
                             </div>
                             <div class="step-line" id="stepLine4"></div>
                             <div class="step-dot" id="stepDot4">
@@ -199,12 +216,15 @@
                                     <span class="upload-subtitle">or choose below</span>
                                 </div>
                                 <div class="upload-buttons" style="display: flex; gap: 10px; margin-top: 8px;">
-                                    <button class="btn btn-secondary" id="btnChooseFiles" style="padding: 6px 12px; font-size: 0.8rem;">Choose Files</button>
-                                    <button class="btn btn-secondary" id="btnChooseFolder" style="padding: 6px 12px; font-size: 0.8rem;">Choose Folder</button>
+                                    <button class="btn btn-secondary" id="btnChooseFiles"
+                                        style="padding: 6px 12px; font-size: 0.8rem;">Choose Files</button>
+                                    <button class="btn btn-secondary" id="btnChooseFolder"
+                                        style="padding: 6px 12px; font-size: 0.8rem;">Choose Folder</button>
                                 </div>
                                 <input type="file" id="fileInput" accept=".pdf" multiple hidden>
                                 <input type="file" id="folderInput" webkitdirectory directory hidden>
                             </div>
+
                             <div class="upload-file-list" id="uploadFileList"></div>
                             <button class="btn btn-upload-action" id="btnUpload" disabled>
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -216,23 +236,23 @@
                             </button>
                         </div>
 
-                        <!-- ══ STEP 1: PDF Processing ══ -->
+                        <!-- ══ STEP 1: Convert to Image ══ -->
                         <div class="pipeline-step" id="pipelineStep1">
                             <div class="step-card-header">
-                                <div class="step-card-icon convert-glow">
+                                <div class="step-card-icon pdf-glow">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                                         <polyline points="14 2 14 8 20 8" />
                                     </svg>
                                 </div>
                                 <div>
-                                    <div class="step-card-title">PDF Processing</div>
-                                    <div class="step-card-subtitle" id="step1Status">Processing PDF files...</div>
+                                    <div class="step-card-title">Convert to Image</div>
+                                    <div class="step-card-subtitle" id="step1Status">Splitting PDF into high-quality images...</div>
                                 </div>
                             </div>
                             <div class="step-progress">
                                 <div class="progress-header">
-                                    <span class="progress-label" id="step1Label">Processing...</span>
+                                    <span class="progress-label" id="step1Label">Initializing...</span>
                                     <span class="progress-percent" id="step1Percent">0%</span>
                                 </div>
                                 <div class="progress-bar-track">
@@ -243,36 +263,11 @@
                             </div>
                         </div>
 
-                        <!-- ══ STEP 2: Image Conversion ══ -->
-                        <div class="pipeline-step" id="pipelineStep2">
-                            <div class="step-card-header">
-                                <div class="step-card-icon convert-glow">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                                        <circle cx="8.5" cy="8.5" r="1.5" />
-                                        <polyline points="21 15 16 10 5 21" />
-                                    </svg>
-                                </div>
-                                <div>
-                                    <div class="step-card-title">Image Conversion</div>
-                                    <div class="step-card-subtitle" id="step2Status">Running convert_to_image.py...</div>
-                                </div>
-                            </div>
-                            <div class="step-progress">
-                                <div class="progress-header">
-                                    <span class="progress-label" id="step2Label">Converting...</span>
-                                    <span class="progress-percent" id="step2Percent">0%</span>
-                                </div>
-                                <div class="progress-bar-track">
-                                    <div class="progress-bar-fill step2-fill" id="step2Fill" style="width: 0%"></div>
-                                    <div class="progress-bar-glow"></div>
-                                </div>
-                                <div class="progress-detail" id="step2Detail"></div>
-                            </div>
-                        </div>
+                        <!-- ══ Hidden previous Step 2 section (merged into Step 1) ══ -->
+                        <div id="pipelineStep2_old" style="display:none"></div>
 
-                        <!-- ══ STEP 3: Auto Rotate ══ -->
-                        <div class="pipeline-step" id="pipelineStep3">
+                        <!-- ══ STEP 2: Auto Rotate ══ -->
+                        <div class="pipeline-step" id="pipelineStep2">
                             <div class="step-card-header">
                                 <div class="step-card-icon rotate-glow">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -298,6 +293,33 @@
                             </div>
                         </div>
 
+                        <!-- ══ STEP 3: Convert to PDF ══ -->
+                        <div class="pipeline-step" id="pipelineStep3">
+                            <div class="step-card-header">
+                                <div class="step-card-icon convert-glow">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                        <polyline points="14 2 14 8 20 8" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <div class="step-card-title">Convert to PDF</div>
+                                    <div class="step-card-subtitle" id="step3Status">Combining images into PDF...</div>
+                                </div>
+                            </div>
+                            <div class="step-progress">
+                                <div class="progress-header">
+                                    <span class="progress-label" id="step3Label">Merging...</span>
+                                    <span class="progress-percent" id="step3Percent">0%</span>
+                                </div>
+                                <div class="progress-bar-track">
+                                    <div class="progress-bar-fill step3-fill" id="step3Fill" style="width: 0%"></div>
+                                    <div class="progress-bar-glow"></div>
+                                </div>
+                                <div class="progress-detail" id="step3Detail"></div>
+                            </div>
+                        </div>
+
                         <!-- ══ STEP 4: Download Results ══ -->
                         <div class="pipeline-step" id="pipelineStep4">
                             <div class="download-complete-icon">
@@ -308,9 +330,11 @@
                             </div>
                             <div class="download-complete-text">
                                 <span class="download-title">Processing Complete!</span>
-                                <span class="download-subtitle" id="downloadSummary">All files have been processed successfully.</span>
+                                <span class="download-subtitle" id="downloadSummary">All files have been processed
+                                    successfully.</span>
                             </div>
-                            <a class="btn btn-download" id="btnDownload" href="/api/download-results" download="OCR_Results.zip">
+                            <a class="btn btn-download" id="btnDownload" href="/api/download-results"
+                                download="OCR_Results.zip">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                                     <polyline points="7 10 12 15 17 10" />
@@ -385,9 +409,9 @@
             <div class="card-header preview-header">
                 <h2 class="card-title">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="title-icon">
-                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                        <circle cx="8.5" cy="8.5" r="1.5"/>
-                        <polyline points="21 15 16 10 5 21"/>
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                        <circle cx="8.5" cy="8.5" r="1.5" />
+                        <polyline points="21 15 16 10 5 21" />
                     </svg>
                     Page Preview
                 </h2>
@@ -408,13 +432,26 @@
         <div class="lightbox-caption" id="lightboxCaption" onclick="event.stopPropagation()"></div>
     </div>
 
+    <!-- ═══ Choice Modal ═══ -->
+    <div class="modal-overlay" id="mergeModal">
+        <div class="modal-content">
+            <div class="modal-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                </svg>
+            </div>
+            <h3 class="modal-title">Convert to PDF?</h3>
+            <p class="modal-text">Would you like to combine all processed images into a single PDF file?</p>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="handleMergeChoice(false)">No, Just Download</button>
+                <button class="btn btn-upload-action" style="margin:0" onclick="handleMergeChoice(true)">Yes, Convert to PDF</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ═══ Toast Notification ═══ -->
     <div class="toast-container" id="toastContainer"></div>
-
-    <!-- ═══ Custom Cursor ═══ -->
-    <div class="cursor" id="cursor">
-        <div class="cursor-inner"></div>
-    </div>
 
     <script src="/app.js?v=3.2"></script>
 </body>

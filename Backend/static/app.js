@@ -23,37 +23,36 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 4000);
     initParticles();
     init2DHover();
-    initCustomCursor();
     initUploadZone();
     const btnUpload = document.getElementById("btnUpload");
     if (btnUpload) {
         btnUpload.addEventListener("click", uploadFiles);
     }
     document.getElementById("btnAutoScroll").classList.add("active");
-    
+
     const welcomeArtContainer = document.getElementById("welcomeArt");
     if (welcomeArtContainer) {
         welcomeArtContainer.textContent = [
-            "╔══════════════════════════════════════════════════════════════╗",
-            "║                                                              ║",
-            "║          OCR ROTATION ENGINE v10.2 PREMIUM                   ║",
-            "║                                                              ║",
-            "║  ═════════════════════════════════════════════════════════   ║",
-            "║                                                              ║",
-            "║     UPLOAD  +  CONVERT  +  ROTATE  +  DOWNLOAD               ║",
-            "║                                                              ║",
-            "║           Drop PDF files to get started                      ║",
-            "║                                                              ║",
-            "╚══════════════════════════════════════════════════════════════╝"
+            "══════════════════════════════════════════════════════════════",
+            "                                                              ",
+            "          OCR ROTATION ENGINE v10.2 PREMIUM                   ",
+            "                                                              ",
+            "  ═════════════════════════════════════════════════════════   ",
+            "                                                              ",
+            "     UPLOAD  +  CONVERT  +  ROTATE  +  DOWNLOAD               ",
+            "                                                              ",
+            "           Drop PDF files to get started                      ",
+            "                                                              ",
+            "══════════════════════════════════════════════════════════════"
         ].join("\n");
     }
-    
+
     // Loader
     const loader = document.getElementById("loader");
     const loaderPercent = document.getElementById("loader-percentage");
     const loaderFill = document.getElementById("loaderFill");
     const loaderStatus = document.getElementById("loaderStatus");
-    if(loader && loaderPercent && loaderFill && loaderStatus) {
+    if (loader && loaderPercent && loaderFill && loaderStatus) {
         let p = 0;
         const statusMessages = [
             "Initializing...",
@@ -65,7 +64,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ];
         const interval = setInterval(() => {
             p += Math.floor(Math.random() * 3) + 1;
-            if(p >= 100) {
+            if (p >= 100) {
                 p = 100;
                 clearInterval(interval);
                 loaderStatus.textContent = "Complete!";
@@ -73,7 +72,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             loaderPercent.textContent = p + "%";
             loaderFill.style.width = p + "%";
-            
+
             // Update status message based on progress
             const statusIndex = Math.min(Math.floor(p / 20), statusMessages.length - 1);
             loaderStatus.textContent = statusMessages[statusIndex];
@@ -210,7 +209,7 @@ function renderTreeNode(node, pathPrefix, depth) {
                     <polyline points="14 2 14 8 20 8"/>
                 </svg>
                 <span class="upload-file-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
-                <span class="upload-file-size">${(f.file.size / (1024*1024)).toFixed(1)} MB</span>
+                <span class="upload-file-size">${(f.file.size / (1024 * 1024)).toFixed(1)} MB</span>
                 <button class="upload-file-remove" onclick="removeFile(${f.idx})">✕</button>
             </div>
         `;
@@ -296,8 +295,8 @@ function startPipelineStep(step) {
     setPipelineStep(step);
     clearTerminal();
     if (step === 1) startProcess("convert");
-    else if (step === 2) startProcess("convert");
-    else if (step === 3) startProcess("rotate");
+    else if (step === 2) startProcess("rotate");
+    else if (step === 3) startProcess("merge");
 }
 
 function resetPipeline() {
@@ -307,6 +306,8 @@ function resetPipeline() {
     setPipelineStep(0);
     const btn = document.getElementById("btnUpload");
     btn.disabled = true;
+    const modal = document.getElementById("mergeModal");
+    if (modal) modal.classList.remove("open");
     btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span>Upload & Start Processing</span>`;
     showToast("Pipeline reset — ready for new files", "info");
 }
@@ -395,20 +396,37 @@ function connectSSE() {
 function handleStepComplete(status) {
     if (status === "finished") {
         if (pipelineStep === 1 && pipelineAutoChain) {
-            // PDF done → auto start Images
-            showToast("PDF processing complete! Starting image conversion...", "success");
-            setTimeout(() => startPipelineStep(2), 1500);
-        } else if (pipelineStep === 2 && pipelineAutoChain) {
             // Images done → auto start Auto Rotate
             showToast("Image conversion complete! Starting Auto Rotate...", "success");
-            setTimeout(() => startPipelineStep(3), 1500);
+            setTimeout(() => startPipelineStep(2), 1500);
+        } else if (pipelineStep === 2) {
+            // Auto Rotate done → Show choice modal
+            showMergeConfirmModal();
         } else if (pipelineStep === 3) {
-            // Auto Rotate done → show download
-            showToast("All processing complete! Results ready for download.", "success");
+            // Merge done → show download
+            showToast("PDF creation complete!", "success");
             setPipelineStep(4);
         }
     } else if (status === "error") {
         showToast("Process encountered an error. Check terminal for details.", "error");
+    }
+}
+
+function showMergeConfirmModal() {
+    const modal = document.getElementById("mergeModal");
+    if (modal) modal.classList.add("open");
+}
+
+function handleMergeChoice(shouldMerge) {
+    const modal = document.getElementById("mergeModal");
+    if (modal) modal.classList.remove("open");
+
+    if (shouldMerge) {
+        showToast("Starting PDF merge...", "info");
+        setTimeout(() => startPipelineStep(3), 500);
+    } else {
+        showToast("Skipping PDF merge. Preparing download...", "info");
+        setPipelineStep(4);
     }
 }
 
@@ -429,7 +447,7 @@ function updateStatusUI(data) {
     if (data.elapsed > 0) {
         const m = Math.floor(data.elapsed / 60);
         const s = Math.floor(data.elapsed % 60);
-        timer.textContent = `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+        timer.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
     }
 
     const isRunning = data.status === "running" || data.status === "stopping";
@@ -507,8 +525,8 @@ function updatePreviewTabs(data) {
     // Main category tabs
     const categories = [];
     if (inputPdfs.length > 0) categories.push({ id: 'input', label: 'Input PDFs', count: inputPdfs.length, color: 'amber' });
-    if (converted.length > 0) categories.push({ id: 'converted', label: 'Converted', count: converted.reduce((a,b) => a + (b.pages || 0), 0), color: 'blue' });
-    if (output.length > 0) categories.push({ id: 'output', label: 'Output', count: output.reduce((a,b) => a + (b.pages || 0), 0), color: 'emerald' });
+    if (converted.length > 0) categories.push({ id: 'converted', label: 'Converted', count: converted.reduce((a, b) => a + (b.pages || 0), 0), color: 'blue' });
+    if (output.length > 0) categories.push({ id: 'output', label: 'Output', count: output.reduce((a, b) => a + (b.pages || 0), 0), color: 'emerald' });
 
     categories.forEach(cat => {
         const isActive = activePreviewTab && activePreviewTab.category === cat.id;
@@ -546,7 +564,7 @@ async function selectCategory(category) {
     try {
         const res = await fetch("/api/output-stats");
         const data = await res.json();
-        
+
         if (category === 'input') {
             renderPdfList(data.input_pdf_list || []);
         } else if (category === 'converted') {
@@ -610,13 +628,13 @@ function renderFolderHierarchy(folders, source) {
     }
 
     if (empty) empty.style.display = "none";
-    
+
     let html = '<div class="folder-tree-root">';
-    
+
     folders.forEach(folder => {
         html += renderFolderNode(folder, source, 0);
     });
-    
+
     html += '</div>';
     grid.innerHTML = html;
 }
@@ -626,7 +644,7 @@ function renderFolderNode(folder, source, depth) {
     const hasImages = folder.pages && folder.pages > 0;
     const folderId = `folder-${folder.path.replace(/[\/\\]/g, '-')}`;
     const indent = depth * 20;
-    
+
     let html = `
     <div class="folder-tree-node" style="margin-left:${indent}px">
         <div class="folder-header" onclick="toggleFolderNode('${escapeHtml(folder.path)}', '${source}')">
@@ -641,7 +659,7 @@ function renderFolderNode(folder, source, depth) {
         </div>
         <div class="folder-content collapsed" id="${folderId}">
     `;
-    
+
     // Recursively render nested children folders
     if (hasChildren) {
         html += '<div class="folder-tree-children">';
@@ -650,10 +668,10 @@ function renderFolderNode(folder, source, depth) {
         });
         html += '</div>';
     }
-    
+
     // Container for lazily-loaded images
     html += `<div class="folder-images-container" id="images-${folderId}"></div>`;
-    
+
     html += '</div></div>';
     return html;
 }
@@ -662,13 +680,13 @@ function toggleFolderNode(folderPath, source) {
     const folderId = `folder-${folderPath.replace(/[\/\\]/g, '-')}`;
     const content = document.getElementById(folderId);
     const chevron = document.getElementById(`chevron-${folderId}`);
-    
+
     if (!content) return;
-    
+
     if (content.classList.contains('collapsed')) {
         content.classList.remove('collapsed');
         if (chevron) chevron.style.transform = 'rotate(90deg)';
-        
+
         // Lazy-load images only (children already rendered)
         const imagesContainer = document.getElementById(`images-${folderId}`);
         if (imagesContainer && imagesContainer.dataset.loaded !== 'true') {
@@ -683,13 +701,13 @@ function toggleFolderNode(folderPath, source) {
 async function loadFolderImages(folderPath, source, folderId) {
     const imagesContainer = document.getElementById(`images-${folderId}`);
     if (!imagesContainer || imagesContainer.dataset.loaded === 'true') return;
-    
+
     try {
         const res = await fetch(`/api/folder-images?folder=${encodeURIComponent(folderPath)}&source=${encodeURIComponent(source)}`);
         const data = await res.json();
-        
+
         let html = '';
-        
+
         if (data.images && data.images.length > 0) {
             html += '<div class="folder-section-title">Images</div>';
             html += '<div class="subfolder-images">';
@@ -709,7 +727,7 @@ async function loadFolderImages(folderPath, source, folderId) {
             });
             html += '</div>';
         }
-        
+
         imagesContainer.innerHTML = html;
         imagesContainer.dataset.loaded = 'true';
     } catch (e) {
@@ -854,7 +872,7 @@ async function saveConvertConfig() {
 
 async function saveRotateConfig() {
     const data = {};
-    ["INPUT_FOLDER","TEMP_FIXED_FOLDER","BLANK_PAGES_FOLDER","OUTPUT_PDF","CHECKPOINT_FILE"].forEach(k => { const el = document.getElementById("cfg_" + k); if (el) data[k] = el.value; });
+    ["INPUT_FOLDER", "TEMP_FIXED_FOLDER", "BLANK_PAGES_FOLDER", "OUTPUT_PDF", "CHECKPOINT_FILE"].forEach(k => { const el = document.getElementById("cfg_" + k); if (el) data[k] = el.value; });
     try {
         const res = await fetch("/api/update-config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
         const result = await res.json();
@@ -908,7 +926,7 @@ function initParticles() {
     if (!canvas) return;
     for (let i = 0; i < 25; i++) {
         const dot = document.createElement("div");
-        dot.style.cssText = `position:absolute;width:${2+Math.random()*3}px;height:${2+Math.random()*3}px;border-radius:50%;background:rgba(108,140,255,${0.05+Math.random()*0.1});left:${Math.random()*100}%;top:${Math.random()*100}%;animation:float ${8+Math.random()*12}s ease-in-out infinite alternate;animation-delay:${-Math.random()*10}s;`;
+        dot.style.cssText = `position:absolute;width:${2 + Math.random() * 3}px;height:${2 + Math.random() * 3}px;border-radius:50%;background:rgba(108,140,255,${0.05 + Math.random() * 0.1});left:${Math.random() * 100}%;top:${Math.random() * 100}%;animation:float ${8 + Math.random() * 12}s ease-in-out infinite alternate;animation-delay:${-Math.random() * 10}s;`;
         canvas.appendChild(dot);
     }
 }
@@ -924,34 +942,4 @@ function init2DHover() {
             card.style.transform = '';
         });
     });
-}
-
-// ── Custom Cursor ───────────────────────────────────
-function initCustomCursor() {
-    const cursor = document.getElementById("cursor");
-    if (!cursor) return;
-    document.body.classList.add("custom-cursor-enabled");
-    let mouseX = window.innerWidth/2, mouseY = window.innerHeight/2, cursorX = mouseX, cursorY = mouseY;
-    function render() {
-        cursorX += (mouseX - cursorX) * 0.15;
-        cursorY += (mouseY - cursorY) * 0.15;
-        cursor.style.transform = `translate(${cursorX}px, ${cursorY}px) translate(-50%, -50%)`;
-        requestAnimationFrame(render);
-    }
-    render();
-    document.addEventListener("mousemove", (e) => { mouseX = e.clientX; mouseY = e.clientY; });
-    const attachHoverEvents = () => {
-        document.querySelectorAll("button, a, .card, .stat-card, input, select, .action-btn, .btn-icon, .terminal-content, .upload-zone, .tree-folder-header, .upload-file-remove").forEach(el => {
-            el.addEventListener("mouseenter", () => {
-                document.body.classList.add("cursor-hover");
-                if (el.classList.contains("btn-upload-action") || el.classList.contains("btn-download") || el.classList.contains("btn-save-config")) document.body.dataset.cursorStyle = "pulsing-green";
-                else if (el.classList.contains("btn-danger") || el.classList.contains("btn-stop-inline")) document.body.dataset.cursorStyle = "target-red";
-                else if (el.classList.contains("upload-zone")) document.body.dataset.cursorStyle = "pulsing-green";
-                else document.body.dataset.cursorStyle = "default-hover";
-            });
-            el.addEventListener("mouseleave", () => { document.body.classList.remove("cursor-hover"); delete document.body.dataset.cursorStyle; });
-        });
-    };
-    attachHoverEvents();
-    new MutationObserver(attachHoverEvents).observe(document.body, { childList: true, subtree: true });
 }
