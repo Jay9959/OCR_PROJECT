@@ -26,11 +26,15 @@ JPG_QUALITY = 95
 # =========================
 # PDF -> PAGE IMAGES
 # =========================
-def pdf_to_images(pdf_path, output_base_folder):
+def pdf_to_images(pdf_path, output_base_folder, relative_path=None):
     pdf_path = Path(pdf_path)
     pdf_name = pdf_path.stem
 
-    pdf_output_folder = Path(output_base_folder) / pdf_name
+    if relative_path:
+        # Preserve folder structure: relative_path includes subdirs + pdf_name
+        pdf_output_folder = Path(output_base_folder) / relative_path / pdf_name
+    else:
+        pdf_output_folder = Path(output_base_folder) / pdf_name
     pdf_output_folder.mkdir(parents=True, exist_ok=True)
 
     doc = fitz.open(str(pdf_path))
@@ -76,7 +80,7 @@ def process_all_pdfs():
     if not input_folder.exists():
         raise FileNotFoundError(f"Input folder not found: {input_folder}")
 
-    pdf_files = sorted(input_folder.glob("*.pdf"))
+    pdf_files = sorted(input_folder.rglob("*.pdf"))
 
     if len(pdf_files) == 0:
         print("[ERROR] No PDF files found")
@@ -88,7 +92,14 @@ def process_all_pdfs():
 
     for pdf_file in pdf_files:
         try:
-            pdf_to_images(pdf_file, output_folder)
+            # Calculate relative path from input folder to preserve structure
+            try:
+                rel_path = pdf_file.parent.relative_to(input_folder)
+                if str(rel_path) == '.':
+                    rel_path = None
+            except ValueError:
+                rel_path = None
+            pdf_to_images(pdf_file, output_folder, relative_path=rel_path)
         except Exception as e:
             print(f"[ERROR] Failed on {pdf_file.name}: {e}")
 

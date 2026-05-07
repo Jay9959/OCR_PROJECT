@@ -18,6 +18,7 @@ import zipfile
 import tempfile
 from pathlib import Path
 from datetime import datetime
+from urllib.parse import quote, unquote
 from flask import Flask, render_template, request, jsonify, Response, send_from_directory, send_file
 
 
@@ -303,6 +304,7 @@ def _parse_script_config(script_path, keys):
 def _resolve_path_expr(expr, base_dir):
     """
     Resolve a Path expression like: BASE_DIR / "Output" / "folder"
+    or BASE_DIR / "H:\\Output" / "temp_fixed"
     Returns a resolved Path or None.
     """
     if "BASE_DIR" not in expr:
@@ -310,6 +312,15 @@ def _resolve_path_expr(expr, base_dir):
 
     # Split by /  and extract quoted parts
     parts = re.findall(r'"([^"]+)"', expr)
+
+    # Check for absolute Windows path (e.g. H:\Output, C:\foo)
+    for i, part in enumerate(parts):
+        if len(part) >= 2 and part[1] == ':':
+            result = Path(part)
+            for p in parts[i + 1:]:
+                result = result / p
+            return result
+
     result = base_dir
     for part in parts:
         result = result / part
@@ -545,42 +556,86 @@ def api_output_stats():
         "converted_pages": 0,
         "converted_folders": [],
         "output_images": 0,
+        "output_folders": [],
         "blank_pages": 0,
         "output_pdfs": 0,
         "output_pdf_list": [],
     }
 
     try:
-        # Count input PDFs
+        # Count input PDFs recursively
         if INPUT_FOLDER.exists():
-            pdfs = list(INPUT_FOLDER.glob("*.pdf"))
+            pdfs = list(INPUT_FOLDER.rglob("*.pdf"))
             stats["input_pdfs"] = len(pdfs)
-            stats["input_pdf_list"] = [p.name for p in pdfs]
+            stats["input_pdf_list"] = [str(p.relative_to(INPUT_FOLDER)) for p in pdfs]
 
-        # Count converted pages
+        # Count converted pages from pdf_page with hierarchy
         if PDF_PAGE_FOLDER.exists():
-            folders = [d for d in PDF_PAGE_FOLDER.iterdir() if d.is_dir()]
-            for folder in folders:
-                page_count = sum(1 for f in folder.rglob("*") if f.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"})
-                stats["converted_pages"] += page_count
-                stats["converted_folders"].append({
-                    "name": folder.name,
-                    "pages": page_count
-                })
+            def scan_folder(path, relative_to):
+                """Recursively scan folder and return tree structure."""
+                result = []
+                for item in sorted(path.iterdir()):
+                    if item.is_dir():
+                        # Count images in this folder and subfolders
+                        page_count = sum(1 for f in item.rglob("*") if f.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"})
+                        rel_path = str(item.relative_to(relative_to)).replace("\\", "/")
+                        children = scan_folder(item, relative_to)
+                        result.append({
+                            "name": item.name,
+                            "path": rel_path,
+                            "pages": page_count,
+                            "children": children
+                        })
+                return result
+            
+            stats["converted_folders"] = scan_folder(PDF_PAGE_FOLDER, PDF_PAGE_FOLDER)
+            # Also count total pages
+            stats["converted_pages"] = sum(f["pages"] for f in stats["converted_folders"])
 
-        # Count output images
-        if OUTPUT_FOLDER.exists():
-            for item in OUTPUT_FOLDER.iterdir():
-                if item.is_dir() and not item.name.endswith("_blank_pages"):
-                    stats["output_images"] += sum(1 for f in item.rglob("*") if f.suffix.lower() in {".jpg", ".jpeg", ".png"})
-                elif item.is_dir() and item.name.endswith("_blank_pages"):
-                    stats["blank_pages"] += sum(1 for f in item.rglob("*") if f.suffix.lower() in {".jpg", ".jpeg", ".png"})
-                elif item.suffix.lower() == ".pdf":
-                    stats["output_pdfs"] += 1
-                    stats["output_pdf_list"].append({
+        # Parse actual output paths from finalcode.py config
+        try:
+            cfg = _parse_script_config(FINALCODE_SCRIPT, [
+                "TEMP_FIXED_FOLDER", "OUTPUT_PDF"
+            ])
+            temp_fixed = Path(cfg.get("TEMP_FIXED_FOLDER", str(BASE_DIR / "Output" / "temp_fixed")))
+            output_pdf = Path(cfg.get("OUTPUT_PDF", str(BASE_DIR / "Output" / "output.pdf")))
+        except Exception:
+            temp_fixed = BASE_DIR / "Output" / "temp_fixed"
+            output_pdf = BASE_DIR / "Output" / "output.pdf"
+
+        # Count output images & blank pages from temp_fixed with hierarchy
+        def scan_output_folders(path, relative_to):
+            """Recursively scan output folders and return tree structure."""
+            result = []
+            for item in sorted(path.iterdir()):
+                if item.is_dir():
+                    img_count = sum(1 for f in item.rglob("*") if f.suffix.lower() in {".jpg", ".jpeg", ".png"})
+                    if item.name.endswith("_black_page"):
+                        stats["blank_pages"] += img_count
+                    else:
+                        stats["output_images"] += img_count
+                    rel_path = str(item.relative_to(relative_to)).replace("\\", "/")
+                    children = scan_output_folders(item, relative_to)
+                    result.append({
                         "name": item.name,
-                        "size_mb": round(item.stat().st_size / (1024 * 1024), 2)
+                        "path": rel_path,
+                        "pages": img_count,
+                        "children": children
                     })
+            return result
+
+        if temp_fixed.exists():
+            stats["output_folders"] = scan_output_folders(temp_fixed, temp_fixed)
+
+        # Count output PDFs
+        output_pdf_dir = output_pdf.parent
+        if output_pdf_dir.exists():
+            pdf_files = [f for f in output_pdf_dir.iterdir() if f.suffix.lower() == ".pdf"]
+            stats["output_pdfs"] = len(pdf_files)
+            stats["output_pdf_list"] = [
+                {"name": f.name, "size_mb": round(f.stat().st_size / (1024 * 1024), 2)}
+                for f in pdf_files
+            ]
     except Exception as e:
         stats["error"] = str(e)
 
@@ -619,7 +674,7 @@ def api_open_folder():
 # ── File Upload ───────────────────────────────────────────────
 @app.route("/api/upload", methods=["POST"])
 def api_upload():
-    """Receive PDF files and save them to the input folder."""
+    """Receive PDF files and save them to the input folder, preserving folder structure."""
     if "files" not in request.files:
         return jsonify({"error": "No files provided"}), 400
 
@@ -632,8 +687,13 @@ def api_upload():
     saved = 0
     for f in files:
         if f.filename and f.filename.lower().endswith(".pdf"):
-            safe_name = Path(f.filename).name
-            f.save(str(INPUT_FOLDER / safe_name))
+            # Preserve relative path from folder uploads (e.g. folder/sub/file.pdf)
+            safe_path = Path(f.filename)
+            # Sanitize: strip . and .. to prevent path traversal
+            parts = [p for p in safe_path.parts if p and p not in (".", "..")]
+            target_path = INPUT_FOLDER.joinpath(*parts)
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            f.save(str(target_path))
             saved += 1
 
     if saved == 0:
@@ -678,6 +738,121 @@ def api_download_results():
         )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ── Image Preview ─────────────────────────────────────────────
+def _get_allowed_roots():
+    """Return set of allowed root directories for image serving."""
+    roots = {BASE_DIR.resolve()}
+    try:
+        cfg = _parse_script_config(FINALCODE_SCRIPT, ["TEMP_FIXED_FOLDER", "BLANK_PAGES_FOLDER", "REVIEW_FOLDER"])
+        for key in ["TEMP_FIXED_FOLDER", "BLANK_PAGES_FOLDER", "REVIEW_FOLDER"]:
+            path_str = cfg.get(key)
+            if path_str:
+                p = Path(path_str).resolve()
+                if p.exists():
+                    roots.add(p)
+    except Exception:
+        pass
+    # Also include pdf_page
+    if PDF_PAGE_FOLDER.exists():
+        roots.add(PDF_PAGE_FOLDER.resolve())
+    return roots
+
+
+@app.route("/api/folder-images")
+def api_folder_images():
+    """List image files and subfolders in a folder under pdf_page or Output/temp_fixed."""
+    folder = request.args.get("folder", "")
+    source = request.args.get("source", "pdf_page")  # pdf_page | output
+    if not folder:
+        return jsonify({"folders": [], "images": []})
+
+    # Determine root based on source
+    if source == "output":
+        # Read actual temp_fixed path from finalcode.py config
+        try:
+            cfg = _parse_script_config(FINALCODE_SCRIPT, ["TEMP_FIXED_FOLDER"])
+            temp_fixed_str = cfg.get("TEMP_FIXED_FOLDER", str(BASE_DIR / "Output" / "temp_fixed"))
+            root = Path(temp_fixed_str).resolve()
+        except Exception:
+            root = (BASE_DIR / "Output" / "temp_fixed").resolve()
+    else:
+        root = PDF_PAGE_FOLDER.resolve()
+
+    chosen = (root / folder).resolve()
+    try:
+        chosen.relative_to(root)
+    except ValueError:
+        return jsonify({"folders": [], "images": []})
+
+    if not chosen.exists() or not chosen.is_dir():
+        return jsonify({"folders": [], "images": []})
+
+    # Get subfolders
+    folders = []
+    for subfolder in sorted(chosen.iterdir()):
+        if subfolder.is_dir():
+            # Count images in this subfolder
+            img_count = sum(1 for f in subfolder.rglob("*") if f.is_file() and f.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"})
+            folders.append({
+                "name": subfolder.name,
+                "path": folder + "/" + subfolder.name if folder else subfolder.name,
+                "count": img_count
+            })
+
+    # Get images in current folder
+    images = []
+    for f in sorted(chosen.glob("*")):
+        if f.is_file() and f.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}:
+            images.append({
+                "name": f.name,
+                "url": f"/api/image-file?path={quote(str(f), safe='')}&name={quote(f.name, safe='')}"
+            })
+
+    return jsonify({"folders": folders, "images": images})
+
+
+@app.route("/api/image-file")
+def api_image_file():
+    """Serve an image file safely from allowed directories."""
+    path_str = unquote(request.args.get("path", ""))
+    if not path_str:
+        return jsonify({"error": "No path provided"}), 400
+
+    requested = Path(path_str).resolve()
+    allowed = _get_allowed_roots()
+
+    safe = any(
+        str(requested).startswith(str(r) + os.sep) or requested == r
+        for r in allowed
+    )
+    if not safe:
+        return jsonify({"error": "Invalid path"}), 400
+
+    if not requested.exists() or not requested.is_file():
+        return jsonify({"error": "Not found"}), 404
+
+    return send_file(str(requested))
+
+
+@app.route("/api/pdf-file")
+def api_pdf_file():
+    """Serve a PDF file safely from the input folder."""
+    path_str = unquote(request.args.get("path", ""))
+    if not path_str:
+        return jsonify({"error": "No path provided"}), 400
+
+    requested = (INPUT_FOLDER / path_str).resolve()
+    try:
+        requested.relative_to(INPUT_FOLDER.resolve())
+    except ValueError:
+        return jsonify({"error": "Invalid path"}), 400
+
+    if not requested.exists() or not requested.is_file():
+        return jsonify({"error": "Not found"}), 404
+
+    return send_file(str(requested))
 
 
 # ── Static files ──────────────────────────────────────────────

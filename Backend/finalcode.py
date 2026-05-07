@@ -55,11 +55,11 @@ else:
     BASE_DIR = Path(__file__).resolve().parent
 
 INPUT_FOLDER = BASE_DIR / "pdf_page"
-TEMP_FIXED_FOLDER = BASE_DIR / "Output" / "temp_fixed"
-BLANK_PAGES_FOLDER = BASE_DIR / "Output" / "blank_pages"
-REVIEW_FOLDER = BASE_DIR / "Output" / "review"
-OUTPUT_PDF = BASE_DIR / "Output" / "output.pdf"
-CHECKPOINT_FILE = BASE_DIR / "Output" / "checkpoint.json"
+TEMP_FIXED_FOLDER = BASE_DIR / "H:\Output" / "temp_fixed"
+BLANK_PAGES_FOLDER = BASE_DIR / "H:\Output" / "blank_pages"
+REVIEW_FOLDER = BASE_DIR / "H:\Output" / "review"
+OUTPUT_PDF = BASE_DIR / "H:\Output" / "output.pdf"
+CHECKPOINT_FILE = BASE_DIR / "H:\Output" / "checkpoint.json"
 
 tesseract_path = shutil.which("tesseract")
 if tesseract_path:
@@ -853,6 +853,23 @@ def get_expected_output_path(img_path: Path, input_root: Path, output_root: Path
     return output_root / img_path.relative_to(input_root)
 
 
+def get_black_page_output_path(img_path: Path, input_root: Path, output_root: Path) -> Path:
+    """
+    For black pages, save to temp_fixed with folder name modified to include '_black_page' suffix.
+    Example: NO_ACC1031_3749 -> NO_ACC1031_3749_black_page
+    """
+    rel_path = img_path.relative_to(input_root)
+    parts = list(rel_path.parts)
+    
+    # Modify the folder name (first directory in the relative path)
+    if len(parts) > 1:
+        original_folder = parts[0]
+        modified_folder = f"{original_folder}_black_page"
+        parts[0] = modified_folder
+    
+    return output_root / Path(*parts)
+
+
 def collect_existing_output_images(output_root: Path) -> List[Path]:
     if not output_root.exists():
         return []
@@ -889,7 +906,7 @@ def validate_blank_checkpoint_entries(image_files: List[Path], input_root: Path,
     for img_path in image_files:
         if str(img_path) not in blank_set:
             continue
-        blank_path = get_expected_output_path(img_path, input_root, blank_root)
+        blank_path = get_black_page_output_path(img_path, input_root, blank_root)
         if blank_path.exists() and blank_path.is_file():
             try:
                 if blank_path.stat().st_size > 0:
@@ -907,13 +924,11 @@ def validate_blank_checkpoint_entries(image_files: List[Path], input_root: Path,
 def main():
     input_dir = Path(INPUT_FOLDER)
     fixed_dir = Path(TEMP_FIXED_FOLDER)
-    blank_dir = Path(BLANK_PAGES_FOLDER)  # NEW
     review_dir = Path(REVIEW_FOLDER)
     pdf_dir = Path(OUTPUT_PDF).parent
 
     # Create all output directories
     fixed_dir.mkdir(parents=True, exist_ok=True)
-    blank_dir.mkdir(parents=True, exist_ok=True)  # NEW
     review_dir.mkdir(parents=True, exist_ok=True)
     pdf_dir.mkdir(parents=True, exist_ok=True)
 
@@ -940,7 +955,7 @@ def main():
     done_set = validate_checkpoint_entries(
         image_files, input_dir, fixed_dir, raw_done_set)
     blank_set = validate_blank_checkpoint_entries(
-        image_files, input_dir, blank_dir, raw_blank_set)
+        image_files, input_dir, fixed_dir, raw_blank_set)
 
     stale_count = len(raw_done_set) - len(done_set)
     stale_blank = len(raw_blank_set) - len(blank_set)
@@ -956,7 +971,6 @@ def main():
         pending.append(p)
 
     existing_output_files = collect_existing_output_images(fixed_dir)
-    existing_blank_files = collect_existing_output_images(blank_dir)
 
     print("\n" + "=" * 80)
     print("AUTO IMAGE ROTATION v10.2+ — WITH ENHANCED BLANK PAGE DETECTION")
@@ -964,13 +978,12 @@ def main():
     print(f"\n[FOLDER] PATHS:")
     print(f"  [1]  INPUT      : {INPUT_FOLDER}")
     print(f"  [2]  OUTPUT     : {TEMP_FIXED_FOLDER}")
-    print(f"  [3]  BLANK      : {BLANK_PAGES_FOLDER}")
-    print(f"  [4]  REVIEW     : {REVIEW_FOLDER}")
-    print(f"  [5]  PDF        : {OUTPUT_PDF}")
-    print(f"  [6]  CHECKPOINT : {CHECKPOINT_FILE}")
+    print(f"  [3]  REVIEW     : {REVIEW_FOLDER}")
+    print(f"  [4]  PDF        : {OUTPUT_PDF}")
+    print(f"  [5]  CHECKPOINT : {CHECKPOINT_FILE}")
     print(f"\n[STATS] STATISTICS:")
     print(
-        f"  Total: {len(image_files):,}  |  Pending: {len(pending):,}  |  Valid: {len(existing_output_files):,}  |  Blank: {len(existing_blank_files):,}")
+        f"  Total: {len(image_files):,}  |  Pending: {len(pending):,}  |  Valid: {len(existing_output_files):,}  |  Blank: {len(blank_set):,}")
     print(f"  Workers: {NUM_WORKERS}  |  Batch Size: {BATCH_SIZE}")
     print("=" * 80 + "\n")
 
@@ -984,13 +997,13 @@ def main():
         return (
             str(p),
             str(get_expected_output_path(p, input_dir, fixed_dir)),
-            str(get_expected_output_path(p, input_dir, blank_dir)),  # NEW
+            str(get_black_page_output_path(p, input_dir, fixed_dir)),  # Save to temp_fixed with _black_page suffix
             str(review_dir),
             str(input_dir)
         )
 
     success = len(existing_output_files)
-    blank_count = len(existing_blank_files)
+    blank_count = len(blank_set)
     fail = 0
     review_count = 0
     stats = {0: 0, 90: 0, 180: 0, 270: 0}
@@ -1073,7 +1086,7 @@ def main():
     print("=" * 80)
     print(f"Total images : {len(image_files):,}")
     print(f"[OK] Processed    : {success:,}    → {TEMP_FIXED_FOLDER}")
-    print(f"[BLANK] Blank pages  : {blank_count:,}    → {BLANK_PAGES_FOLDER}")
+    print(f"[BLANK] Blank pages  : {blank_count:,}    → {TEMP_FIXED_FOLDER} (with _black_page suffix)")
     print(f"[ERROR] Failed       : {fail:,}")
     print(f"[REVIEW] Review pages : {review_count:,}   → {REVIEW_FOLDER}")
     print(f"\n[ROTATION] Rotation Stats:")
@@ -1082,11 +1095,11 @@ def main():
     print(f"   180° : {stats[180]:,}")
     print(f"   270° : {stats[270]:,}")
     print("=" * 80)
-    
+
     # Show folder locations
     print(f"\n[FOLDER] OUTPUT FOLDERS CREATED:")
     print(f"   [OK] Fixed Images  : {TEMP_FIXED_FOLDER}")
-    print(f"   [OK] Blank Pages   : {BLANK_PAGES_FOLDER}")
+    print(f"   [OK] Blank Pages   : {TEMP_FIXED_FOLDER} (with _black_page suffix)")
     print(f"   [OK] Review Folder : {REVIEW_FOLDER}")
     print(f"   [OK] Checkpoint    : {CHECKPOINT_FILE}")
 
