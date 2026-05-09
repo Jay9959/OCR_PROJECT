@@ -11,73 +11,95 @@ let currentConfig = {};
 let pipelineStep = 0; // 0=upload, 1=pdf, 2=images, 3=rotate, 4=download
 let selectedFiles = [];
 let pipelineAutoChain = false; // auto-start step 2 after step 1
+let currentTheme = localStorage.getItem('ocr-theme') || 'dark';
+
+// Batch Processing State
+let batchQueue = [];
+let batchState = {
+    isRunning: false,
+    isPaused: false,
+    currentIndex: 0,
+    totalProcessed: 0,
+    totalFailed: 0,
+    startTime: null,
+    currentProcess: null
+};
 
 // ── Init ────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
-    fetchStatus();
-    fetchOutputStats();
-    fetchConfig();
-    statusInterval = setInterval(() => {
-        fetchStatus();
-        fetchOutputStats();
-    }, 4000);
-    initParticles();
-    init2DHover();
-    initUploadZone();
-    const btnUpload = document.getElementById("btnUpload");
-    if (btnUpload) {
-        btnUpload.addEventListener("click", uploadFiles);
-    }
-    document.getElementById("btnAutoScroll").classList.add("active");
-
-    const welcomeArtContainer = document.getElementById("welcomeArt");
-    if (welcomeArtContainer) {
-        welcomeArtContainer.textContent = [
-            "══════════════════════════════════════════════════════════════",
-            "                                                              ",
-            "          OCR ROTATION ENGINE v10.2 PREMIUM                   ",
-            "                                                              ",
-            "  ═════════════════════════════════════════════════════════   ",
-            "                                                              ",
-            "     UPLOAD  +  CONVERT  +  ROTATE  +  DOWNLOAD               ",
-            "                                                              ",
-            "           Drop PDF files to get started                      ",
-            "                                                              ",
-            "══════════════════════════════════════════════════════════════"
-        ].join("\n");
-    }
-
-    // Loader
-    const loader = document.getElementById("loader");
+    // Enhanced Loading Screen Animation
+    const loaderContainer = document.getElementById("loader");
     const loaderPercent = document.getElementById("loader-percentage");
     const loaderFill = document.getElementById("loaderFill");
     const loaderStatus = document.getElementById("loaderStatus");
-    if (loader && loaderPercent && loaderFill && loaderStatus) {
+    
+    if (loaderContainer && loaderPercent && loaderFill && loaderStatus) {
         let p = 0;
         const statusMessages = [
             "Initializing...",
-            "Loading modules...",
-            "Preparing OCR engine...",
-            "Setting up environment...",
-            "Finalizing setup...",
+            "Loading OCR modules...",
+            "Preparing engine components...",
+            "Setting up processing environment...",
+            "Calibrating rotation algorithms...",
+            "Finalizing initialization...",
             "Almost ready..."
         ];
+        
         const interval = setInterval(() => {
-            p += Math.floor(Math.random() * 3) + 1;
+            p += Math.floor(Math.random() * 2) + 1;
             if (p >= 100) {
                 p = 100;
                 clearInterval(interval);
-                loaderStatus.textContent = "Complete!";
-                setTimeout(() => { loader.classList.add("hidden"); }, 800);
+                loaderStatus.textContent = "Complete! Ready to process documents.";
+                setTimeout(() => { 
+                    loaderContainer.classList.add("hidden"); 
+                }, 1000);
             }
+            
             loaderPercent.textContent = p + "%";
             loaderFill.style.width = p + "%";
 
             // Update status message based on progress
-            const statusIndex = Math.min(Math.floor(p / 20), statusMessages.length - 1);
+            const statusIndex = Math.min(Math.floor(p / 15), statusMessages.length - 1);
             loaderStatus.textContent = statusMessages[statusIndex];
-        }, 80);
+        }, 100);
     }
+
+    // Initialize application after a short delay to let loader show
+    setTimeout(() => {
+        fetchStatus();
+        fetchOutputStats();
+        fetchConfig();
+        statusInterval = setInterval(() => {
+            fetchStatus();
+            fetchOutputStats();
+        }, 4000);
+        initParticles();
+        init2DHover();
+        initUploadZone();
+        initThemeSystem();
+        
+        const btnUpload = document.getElementById("btnUpload");
+        if (btnUpload) {
+            btnUpload.addEventListener("click", uploadFiles);
+        }
+        document.getElementById("btnAutoScroll").classList.add("active");
+
+        const welcomeArtContainer = document.getElementById("welcomeArt");
+        if (welcomeArtContainer) {
+            welcomeArtContainer.textContent = [
+                "══════════════════════════════════════════════════════════════",
+                "                                                              ",
+                "          OCR ROTATION ENGINE v10.2 PREMIUM                   ",
+                "                                                              ",
+                "  ═════════════════════════════════════════════════════════   ",
+                "                                                              ",
+                "     UPLOAD  +  CONVERT  +  ROTATE  +  DOWNLOAD               ",
+                "                                                              ",
+                "══════════════════════════════════════════════════════════════"
+            ].join("\n");
+        }
+    }, 500);
 });
 
 // ── Upload Zone ─────────────────────────────────────
@@ -255,6 +277,17 @@ async function uploadFiles() {
     btn.disabled = true;
     btn.innerHTML = `<div class="loading-spinner"></div><span>Uploading...</span>`;
 
+    // Check if this is a batch operation (more than 5 files)
+    if (selectedFiles.length > 5) {
+        addToBatchQueue(selectedFiles);
+        selectedFiles = [];
+        renderFileList();
+        btn.disabled = false;
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span>Upload & Start Processing</span>`;
+        return;
+    }
+
+    // Single file processing (existing logic)
     const formData = new FormData();
     selectedFiles.forEach(f => formData.append("files", f, f.webkitRelativePath || f.name));
 
@@ -326,6 +359,7 @@ async function fetchOutputStats() {
         const res = await fetch("/api/output-stats");
         const data = await res.json();
         updateStatsUI(data);
+        updateBatchUI(); // Update batch queue to show processed files
     } catch (e) { /* silent */ }
 }
 
@@ -755,7 +789,7 @@ function renderPdfList(pdfs) {
         const name = parts[parts.length - 1] || p;
         const pdfUrl = `/api/pdf-file?path=${encodeURIComponent(p)}`;
         return `
-        <div class="preview-item pdf-card" title="${escapeHtml(p)}" onclick="window.open('${escapeHtml(pdfUrl)}', '_blank')">
+        <div class="preview-item pdf-card" title="${escapeHtml(p)}" onclick="openPDFViewer('${escapeHtml(p)}', '${escapeHtml(name)}')">
             <div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:8px;padding:8px;">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="36" height="36" style="color:var(--accent-amber);flex-shrink:0">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -906,18 +940,100 @@ async function openFolder(folder) {
     } catch (e) { showToast("Failed to open folder", "error"); }
 }
 
-// ── Toasts ──────────────────────────────────────────
-let _lastToast = { msg: "", time: 0 };
-function showToast(msg, type = "info") {
-    const now = Date.now();
-    if (_lastToast.msg === msg && (now - _lastToast.time) < 2000) return;
-    _lastToast = { msg, time: now };
-    const container = document.getElementById("toastContainer");
-    const toast = document.createElement("div");
-    toast.className = "toast " + type;
-    toast.textContent = msg;
-    container.appendChild(toast);
-    setTimeout(() => { toast.style.opacity = "0"; toast.style.transform = "translateX(100%)"; toast.style.transition = "all .3s ease"; setTimeout(() => toast.remove(), 300); }, 3500);
+// ── 2D Hover Lift ─────────────────────────────────────────
+function init2DHover() {
+    const cards = document.querySelectorAll('.stat-card, .card:not(.terminal-card)');
+    cards.forEach(card => {
+        card.addEventListener('mouseenter', () => {
+            card.style.transform = 'translateY(-2px)';
+        });
+        card.addEventListener('mouseleave', () => {
+            card.style.transform = '';
+        });
+    });
+}
+
+// ── Theme System ───────────────────────────────────────────
+function initThemeSystem() {
+    // Apply saved theme
+    setTheme(currentTheme, false);
+    
+    // Setup theme toggle button
+    const themeToggle = document.getElementById('themeToggle');
+    const themeDropdown = document.getElementById('themeDropdown');
+    
+    if (themeToggle && themeDropdown) {
+        themeToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            themeDropdown.classList.toggle('show');
+        });
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.theme-toggle-container')) {
+                themeDropdown.classList.remove('show');
+            }
+        });
+        
+        // Update active state in dropdown
+        updateThemeOptions();
+    }
+}
+
+function setTheme(theme, save = true) {
+    const root = document.documentElement;
+    const themeToggle = document.getElementById('themeToggle');
+    const themeDropdown = document.getElementById('themeDropdown');
+    
+    // Remove all theme classes
+    root.removeAttribute('data-theme');
+    
+    // Apply new theme
+    if (theme !== 'dark') {
+        root.setAttribute('data-theme', theme);
+    }
+    
+    currentTheme = theme;
+    
+    // Update theme toggle button appearance
+    if (themeToggle) {
+        const darkIcon = themeToggle.querySelector('.theme-icon-dark');
+        const lightIcon = themeToggle.querySelector('.theme-icon-light');
+        
+        if (theme === 'light') {
+            darkIcon.style.opacity = '0';
+            darkIcon.style.transform = 'rotate(-180deg)';
+            lightIcon.style.opacity = '1';
+            lightIcon.style.transform = 'rotate(0deg)';
+        } else {
+            darkIcon.style.opacity = '1';
+            darkIcon.style.transform = 'rotate(0deg)';
+            lightIcon.style.opacity = '0';
+            lightIcon.style.transform = 'rotate(-180deg)';
+        }
+    }
+    
+    // Update active state in dropdown
+    updateThemeOptions();
+    
+    // Save to localStorage
+    if (save) {
+        localStorage.setItem('ocr-theme', theme);
+        showToast(`Theme changed to ${getThemeDisplayName(theme)}`, 'success');
+    }
+    
+    // Close dropdown
+    if (themeDropdown) {
+        themeDropdown.classList.remove('show');
+    }
+}
+
+function updateThemeOptions() {
+    const options = document.querySelectorAll('.theme-option');
+    options.forEach(option => {
+        const theme = option.getAttribute('data-theme');
+        option.classList.toggle('active', theme === currentTheme);
+    });
 }
 
 // ── Particles ───────────────────────────────────────
@@ -931,15 +1047,1152 @@ function initParticles() {
     }
 }
 
-// ── 2D Hover Lift ─────────────────────────────────────────
-function init2DHover() {
-    const cards = document.querySelectorAll('.stat-card, .card:not(.terminal-card)');
-    cards.forEach(card => {
-        card.addEventListener('mouseenter', () => {
-            card.style.transform = 'translateY(-2px)';
+// ── Toasts ──────────────────────────────────────────
+let _lastToast = { msg: "", time: 0 };
+function showToast(msg, type = "info", options = {}) {
+    const now = Date.now();
+    if (_lastToast.msg === msg && (now - _lastToast.time) < 2000) return;
+    _lastToast = { msg, time: now };
+    
+    const container = document.getElementById("toastContainer");
+    const toast = document.createElement("div");
+    toast.className = `toast ${type}`;
+    
+    // Add icon based on type
+    const icon = getToastIcon(type);
+    const title = getToastTitle(type);
+    
+    toast.innerHTML = `
+        <div class="toast-content">
+            <div class="toast-icon">${icon}</div>
+            <div class="toast-text">
+                <div class="toast-title">${title}</div>
+                <div class="toast-message">${escapeHtml(msg)}</div>
+            </div>
+            <button class="toast-close" onclick="this.parentElement.remove()" title="Dismiss">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        ${options.persistent ? '<div class="toast-progress"></div>' : ''}
+    `;
+    
+    container.appendChild(toast);
+    
+    // Auto-dismiss unless persistent
+    if (!options.persistent) {
+        setTimeout(() => {
+            toast.classList.add('removing');
+            setTimeout(() => toast.remove(), 300);
+        }, options.duration || 4000);
+    }
+    
+    // Play sound
+    playNotificationSound(type);
+    
+    // Handle progress updates for persistent toasts
+    if (options.persistent && options.progress) {
+        updateToastProgress(toast, options.progress);
+    }
+}
+
+function getToastIcon(type) {
+    const icons = {
+        success: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+        </svg>`,
+        error: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="15" y1="9" x2="9" y2="15"></line>
+            <line x1="9" y1="9" x2="15" y2="15"></line>
+        </svg>`,
+        warning: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3.71L12 7.29l9.47 9.47a2 2 0 0 0 1.71-3.71L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+        </svg>`,
+        info: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>`,
+        processing: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 4v6h-6"></path>
+            <path d="M1 20v-6h6"></path>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>`,
+        complete: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 11l3 3L22 4"></path>
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11z"></path>
+        </svg>`
+    };
+    return icons[type] || icons.info;
+}
+
+function getToastTitle(type) {
+    const titles = {
+        success: 'Success',
+        error: 'Error',
+        warning: 'Warning',
+        info: 'Information',
+        processing: 'Processing',
+        complete: 'Complete'
+    };
+    return titles[type] || 'Notification';
+}
+
+function updateToastProgress(toast, progress) {
+    const progressBar = toast.querySelector('.toast-progress');
+    if (progressBar) {
+        progressBar.style.width = `${progress}%`;
+    }
+}
+
+function playNotificationSound(type) {
+    if (!notificationSettings.soundEnabled) return;
+    
+    try {
+        const audio = new Audio(notificationSounds[type] || notificationSounds.info);
+        audio.volume = notificationSettings.volume;
+        audio.play().catch(e => {
+            console.log('Could not play notification sound:', e);
         });
-        card.addEventListener('mouseleave', () => {
-            card.style.transform = '';
-        });
+    } catch (error) {
+        console.log('Error playing notification sound:', error);
+    }
+}
+
+function getThemeDisplayName(theme) {
+    const names = {
+        'dark': 'Dark Mode',
+        'light': 'Light Mode',
+        'purple-neon': 'Purple Neon',
+        'cyber-blue': 'Cyber Blue'
+    };
+    return names[theme] || theme;
+}
+
+// ── Smart Notification System ───────────────────────────────────
+let notificationSettings = {
+    enabled: true,
+    soundEnabled: true,
+    volume: 0.5,
+    persistent: false
+};
+
+// Notification sound effects
+const notificationSounds = {
+    success: 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQgAAAAA',
+    error: 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQgAAAAA',
+    warning: 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQgAAAAA',
+    info: 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQgAAAAA',
+    complete: 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQgAAAAA',
+    processing: 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQgAAAAA'
+};
+
+function showSmartNotification(event, data) {
+    const messages = {
+        'processing-started': {
+            message: 'Processing Started',
+            description: data.fileName ? `Started processing ${data.fileName}` : 'Processing has begun',
+            type: 'processing'
+        },
+        'rotation-completed': {
+            message: 'Rotation Completed',
+            description: data.fileName ? `Auto-rotation completed for ${data.fileName}` : 'Document rotation finished',
+            type: 'success'
+        },
+        'pdf-ready': {
+            message: 'PDF Ready for Download',
+            description: `Your processed PDF is ready for download`,
+            type: 'success'
+        },
+        'manual-review': {
+            message: 'Manual Review Required',
+            description: `${data.count} pages need manual review`,
+            type: 'warning',
+            persistent: true
+        },
+        'batch-completed': {
+            message: 'Batch Processing Complete',
+            description: `Processed ${data.processed} files successfully${data.failed ? `, ${data.failed} failed` : ''}`,
+            type: 'complete'
+        },
+        'batch-item-failed': {
+            message: 'Item Processing Failed',
+            description: `Failed to process ${data.fileName}: ${data.error}`,
+            type: 'error'
+        },
+        'theme-changed': {
+            message: 'Theme Changed',
+            description: `Theme changed to ${data.themeName}`,
+            type: 'info'
+        }
+    };
+    
+    const notification = messages[event];
+    if (!notification) return;
+    
+    showToast(
+        notification.description,
+        notification.type,
+        {
+            persistent: notification.persistent || false,
+            duration: notification.type === 'error' ? 6000 : 4000
+        }
+    );
+}
+
+function showProcessingStarted(fileName) {
+    showSmartNotification('processing-started', { fileName });
+}
+
+function showRotationCompleted(fileName) {
+    showSmartNotification('rotation-completed', { fileName });
+}
+
+function showPDFReady(fileName) {
+    showSmartNotification('pdf-ready', { fileName });
+}
+
+function showManualReview(count) {
+    showSmartNotification('manual-review', { count });
+}
+
+function showBatchCompleted(processed, failed) {
+    showSmartNotification('batch-completed', { processed, failed });
+}
+
+// ── Batch Processing Functions ───────────────────────────────────────
+function addToBatchQueue(files) {
+    files.forEach(file => {
+        if (file.name.toLowerCase().endsWith('.pdf')) {
+            batchQueue.push({
+                id: Date.now() + Math.random(),
+                file: file,
+                name: file.name,
+                size: (file.size / (1024 * 1024)).toFixed(1),
+                status: 'waiting', // waiting, processing, completed, failed
+                progress: 0,
+                error: null,
+                startTime: null,
+                endTime: null
+            });
+        }
     });
+    
+    updateBatchUI();
+    showToast(`Added ${files.length} files to batch queue`, 'success');
+}
+
+function clearBatchQueue() {
+    if (batchState.isRunning) {
+        showToast('Cannot clear queue while batch is running', 'error');
+        return;
+    }
+    
+    batchQueue = [];
+    updateBatchUI();
+    showToast('Batch queue cleared', 'info');
+}
+
+function addInputFolderFilesToBatch(pdfList) {
+    if (!pdfList || pdfList.length === 0) {
+        showToast('No PDF files found in input folder', 'error');
+        return;
+    }
+
+    let addedCount = 0;
+    pdfList.forEach(pdfPath => {
+        // Create a mock file object for files already in input folder
+        const mockFile = {
+            name: pdfPath.split('/').pop() || pdfPath.split('\\').pop(),
+            path: pdfPath,
+            size: 0, // We don't know the size without additional API call
+            isFromInputFolder: true
+        };
+        
+        batchQueue.push({
+            id: Date.now() + Math.random(),
+            file: mockFile,
+            name: mockFile.name,
+            status: 'waiting',
+            progress: 0,
+            error: null,
+            startTime: null,
+            endTime: null
+        });
+        addedCount++;
+    });
+    
+    updateBatchUI();
+    showToast(`Added ${addedCount} PDF files from input folder to batch queue`, 'success');
+    
+    // Automatically start processing after adding files
+    setTimeout(() => {
+        startBatchProcessing();
+    }, 500);
+}
+
+function startBatchProcessing() {
+    console.log('Start batch clicked. Queue length:', batchQueue.length);
+    console.log('Batch queue items:', batchQueue);
+    
+    if (batchQueue.length === 0) {
+        // Check if there are any files in the input folder and automatically add them to queue
+        fetch('/api/output-stats').then(res => res.json()).then(data => {
+            if (data.input_pdfs > 0) {
+                // Automatically add PDF files from input folder to batch queue
+                addInputFolderFilesToBatch(data.input_pdf_list);
+                return;
+            } else {
+                showToast('No files in queue to process. Upload PDF files first.', 'error');
+            }
+        }).catch(() => {
+            showToast('No files in queue to process', 'error');
+        });
+        return;
+    }
+    
+    if (batchState.isRunning) {
+        showToast('Batch processing already running', 'error');
+        return;
+    }
+    
+    batchState.isRunning = true;
+    batchState.isPaused = false;
+    batchState.currentIndex = 0;
+    batchState.totalProcessed = 0;
+    batchState.totalFailed = 0;
+    batchState.startTime = Date.now();
+    
+    updateBatchUI();
+    processNextBatchItem();
+    showToast('Batch processing started', 'success');
+}
+
+function pauseBatchProcessing() {
+    if (!batchState.isRunning || batchState.isPaused) {
+        return;
+    }
+    
+    batchState.isPaused = true;
+    updateBatchUI();
+    showToast('Batch processing paused', 'info');
+}
+
+function resumeBatchProcessing() {
+    if (!batchState.isRunning || !batchState.isPaused) {
+        return;
+    }
+    
+    batchState.isPaused = false;
+    updateBatchUI();
+    processNextBatchItem();
+    showToast('Batch processing resumed', 'info');
+}
+
+function stopBatchProcessing() {
+    if (!batchState.isRunning) {
+        return;
+    }
+    
+    batchState.isRunning = false;
+    batchState.isPaused = false;
+    
+    // Reset all processing items back to waiting
+    batchQueue.forEach(item => {
+        if (item.status === 'processing') {
+            item.status = 'waiting';
+            item.progress = 0;
+        }
+    });
+    
+    updateBatchUI();
+    showToast('Batch processing stopped', 'warning');
+}
+
+async function processNextBatchItem() {
+    if (!batchState.isRunning || batchState.isPaused) {
+        return;
+    }
+    
+    // Find next waiting item
+    const nextItem = batchQueue.find(item => item.status === 'waiting');
+    if (!nextItem) {
+        // Check if all items are completed
+        const allCompleted = batchQueue.every(item => 
+            item.status === 'completed' || item.status === 'failed'
+        );
+        
+        if (allCompleted) {
+            finishBatchProcessing();
+        }
+        return;
+    }
+    
+    nextItem.status = 'processing';
+    nextItem.startTime = Date.now();
+    batchState.currentProcess = nextItem;
+    
+    updateBatchUI();
+    
+    try {
+        // Check if file is already in input folder
+        if (nextItem.file.isFromInputFolder) {
+            // File is already in input folder, skip upload
+            console.log(`File ${nextItem.name} is already in input folder, skipping upload`);
+            nextItem.progress = 33;
+            updateBatchUI();
+        } else {
+            // Upload the file first
+            const formData = new FormData();
+            formData.append('files', nextItem.file, nextItem.name);
+            
+            const uploadRes = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const uploadData = await uploadRes.json();
+            if (uploadData.error) {
+                throw new Error(uploadData.error);
+            }
+            
+            nextItem.progress = 33;
+            updateBatchUI();
+        }
+        
+        // Start processing pipeline
+        await processBatchItem(nextItem);
+        
+    } catch (error) {
+        nextItem.status = 'failed';
+        nextItem.error = error.message;
+        nextItem.endTime = Date.now();
+        batchState.totalFailed++;
+        
+        updateBatchUI();
+        showToast(`Failed to process ${nextItem.name}: ${error.message}`, 'error');
+        
+        // Continue to next item
+        setTimeout(() => processNextBatchItem(), 1000);
+    }
+}
+
+async function processBatchItem(item) {
+    try {
+        // Step 1: Convert to images
+        item.progress = 50;
+        updateBatchUI();
+        
+        // Set pipeline step to 1 for conversion progress display
+        setPipelineStep(1);
+        
+        // Use new batch processing API for file isolation
+        const convertRes = await fetch('/api/process-batch-file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                file_path: item.file.path || item.file.name,
+                script_type: 'convert'
+            })
+        });
+        
+        const convertData = await convertRes.json();
+        if (convertData.error) {
+            throw new Error(convertData.error);
+        }
+        
+        // Wait for conversion to complete with progress updates
+        await waitForProcessCompletion('convert');
+        
+        // Restore files after conversion
+        await fetch('/api/restore-batch-files', { method: 'POST' });
+        
+        // Step 2: Auto rotate
+        item.progress = 75;
+        updateBatchUI();
+        
+        // Set pipeline step to 2 for rotation progress display
+        setPipelineStep(2);
+        
+        // Use new batch processing API for file isolation
+        const rotateRes = await fetch('/api/process-batch-file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                file_path: item.file.path || item.file.name,
+                script_type: 'rotate'
+            })
+        });
+        
+        const rotateData = await rotateRes.json();
+        if (rotateData.error) {
+            throw new Error(rotateData.error);
+        }
+        
+        // Wait for rotation to complete with progress updates
+        await waitForProcessCompletion('rotate');
+        
+        // Restore files after rotation
+        await fetch('/api/restore-batch-files', { method: 'POST' });
+        
+        // Mark as completed
+        item.status = 'completed';
+        item.progress = 100;
+        item.endTime = Date.now();
+        batchState.totalProcessed++;
+        
+        updateBatchUI();
+        
+        // Continue to next item
+        setTimeout(() => processNextBatchItem(), 500);
+        
+    } catch (error) {
+        item.status = 'failed';
+        item.error = error.message;
+        item.endTime = Date.now();
+        batchState.totalFailed++;
+        
+        updateBatchUI();
+        setTimeout(() => processNextBatchItem(), 1000);
+    }
+}
+
+function waitForProcessCompletion(scriptType) {
+    return new Promise((resolve, reject) => {
+        const checkInterval = setInterval(async () => {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+                
+                // Update status UI to show progress
+                updateStatusUI(data);
+                
+                if (data.status === 'finished') {
+                    clearInterval(checkInterval);
+                    resolve();
+                } else if (data.status === 'error') {
+                    clearInterval(checkInterval);
+                    reject(new Error(data.error_message || 'Process failed'));
+                }
+            } catch (error) {
+                clearInterval(checkInterval);
+                reject(error);
+            }
+        }, 1000); // Check more frequently for better progress updates
+        
+        // Timeout after 5 minutes
+        setTimeout(() => {
+            clearInterval(checkInterval);
+            reject(new Error('Process timeout'));
+        }, 300000);
+    });
+}
+
+function finishBatchProcessing() {
+    batchState.isRunning = false;
+    batchState.currentProcess = null;
+    
+    const duration = Date.now() - batchState.startTime;
+    const minutes = Math.floor(duration / 60000);
+    const seconds = Math.floor((duration % 60000) / 1000);
+    
+    showToast(`Batch processing completed in ${minutes}m ${seconds}s. Processed: ${batchState.totalProcessed}, Failed: ${batchState.totalFailed}`, 'success');
+    
+    // Play completion sound if available
+    playNotificationSound('complete');
+    
+    updateBatchUI();
+}
+
+function updateBatchUI() {
+    // Update stats
+    let total, processed, failed, progress;
+    
+    if (batchQueue.length > 0) {
+        // Use batch queue stats when items are in queue
+        total = batchQueue.length;
+        processed = batchQueue.filter(item => item.status === 'completed').length;
+        failed = batchQueue.filter(item => item.status === 'failed').length;
+        progress = total > 0 ? Math.round((processed + failed) / total * 100) : 0;
+    } else {
+        // Use overall processing stats when queue is empty
+        const statsElements = {
+            outputImages: document.getElementById('outputImageCount'),
+            blankPages: document.getElementById('blankPageCount')
+        };
+        
+        total = parseInt(statsElements.outputImages?.textContent || '0') + 
+                parseInt(statsElements.blankPages?.textContent || '0');
+        processed = parseInt(statsElements.outputImages?.textContent || '0');
+        failed = 0; // Failed count not available in main stats
+        progress = total > 0 ? 100 : 0; // If there are processed files, show 100%
+    }
+    
+    setText('batchTotal', total);
+    setText('batchProcessed', processed);
+    setText('batchFailed', failed);
+    setText('batchProgress', progress + '%');
+    setText('batchCount', `${total} files`);
+    
+    // Update buttons
+    const btnStart = document.getElementById('btnStartBatch');
+    const btnPause = document.getElementById('btnPauseBatch');
+    const btnStop = document.getElementById('btnStopBatch');
+    const btnClear = document.getElementById('btnClearQueue');
+    
+    if (btnStart) {
+        btnStart.disabled = batchState.isRunning || total === 0;
+        btnStart.innerHTML = batchState.isPaused ? 
+            `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>Resume</span>` :
+            `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>Start Batch</span>`;
+    }
+    
+    if (btnPause) {
+        btnPause.disabled = !batchState.isRunning || batchState.isPaused;
+        btnPause.onclick = batchState.isPaused ? resumeBatchProcessing : pauseBatchProcessing;
+    }
+    
+    if (btnStop) {
+        btnStop.disabled = !batchState.isRunning;
+    }
+    
+    if (btnClear) {
+        btnClear.disabled = batchState.isRunning;
+    }
+    
+    // Update queue items
+    const queueContainer = document.getElementById('batchQueue');
+    const emptyState = document.getElementById('batchEmpty');
+    
+    if (total === 0) {
+        queueContainer.innerHTML = '';
+        
+        // Check if there are any processed files to show appropriate message
+        const outputImages = parseInt(document.getElementById('outputImageCount')?.textContent || '0');
+        const blankPages = parseInt(document.getElementById('blankPageCount')?.textContent || '0');
+        const hasProcessedFiles = (outputImages + blankPages) > 0;
+        
+        if (hasProcessedFiles && batchQueue.length === 0) {
+            // Show processed files summary instead of empty state
+            queueContainer.innerHTML = `
+                <div class="batch-summary" style="text-align: center; padding: 20px; color: var(--text-muted);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="48" height="48" style="margin-bottom: 12px; opacity: 0.6;">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                    <div style="font-size: 1.1rem; margin-bottom: 8px;">Files Processed Outside Batch Queue</div>
+                    <div style="font-size: 0.9rem; opacity: 0.8;">
+                        ${outputImages} processed images • ${blankPages} blank pages
+                    </div>
+                    <div style="font-size: 0.8rem; opacity: 0.6; margin-top: 8px;">
+                        Upload more files to add them to the batch queue
+                    </div>
+                </div>
+            `;
+        } else {
+            // Show original empty state
+            queueContainer.appendChild(emptyState);
+        }
+        return;
+    }
+    
+    let html = '';
+    batchQueue.forEach(item => {
+        const statusIcon = getStatusIcon(item.status);
+        const statusText = getStatusText(item.status);
+        const progressHtml = item.status === 'processing' ? 
+            `<div class="batch-item-progress">
+                <div class="batch-item-progress-fill" style="width: ${item.progress}%"></div>
+            </div>` : '';
+        
+        html += `
+            <div class="batch-item ${item.status}">
+                <div class="batch-item-info">
+                    <div class="batch-item-icon">
+                        ${statusIcon}
+                    </div>
+                    <div class="batch-item-details">
+                        <div class="batch-item-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
+                        <div class="batch-item-status">
+                            ${statusText}
+                            ${item.error ? `<span style="color: var(--accent-rose)">- ${escapeHtml(item.error)}</span>` : ''}
+                        </div>
+                    </div>
+                </div>
+                ${progressHtml}
+                <div class="batch-item-actions">
+                    ${item.status === 'failed' ? `
+                        <button class="btn-icon btn-icon-sm" onclick="retryBatchItem('${item.id}')" title="Retry">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="23 4 23 10 17 10"></polyline>
+                                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                            </svg>
+                        </button>
+                    ` : ''}
+                    <button class="btn-icon btn-icon-sm" onclick="removeBatchItem('${item.id}')" title="Remove">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+    
+    queueContainer.innerHTML = html;
+}
+
+function getStatusIcon(status) {
+    const icons = {
+        waiting: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>`,
+        processing: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 4v6h-6"></path>
+            <path d="M1 20v-6h6"></path>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>`,
+        completed: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+        </svg>`,
+        failed: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="15" y1="9" x2="9" y2="15"></line>
+            <line x1="9" y1="9" x2="15" y2="15"></line>
+        </svg>`
+    };
+    return icons[status] || icons.waiting;
+}
+
+function getStatusText(status) {
+    const texts = {
+        waiting: 'Waiting',
+        processing: 'Processing',
+        completed: 'Completed',
+        failed: 'Failed'
+    };
+    return texts[status] || 'Unknown';
+}
+
+function removeBatchItem(itemId) {
+    if (batchState.isRunning) {
+        const item = batchQueue.find(i => i.id == itemId);
+        if (item && item.status === 'processing') {
+            showToast('Cannot remove item while it is being processed', 'error');
+            return;
+        }
+    }
+    
+    batchQueue = batchQueue.filter(item => item.id != itemId);
+    updateBatchUI();
+    showToast('Item removed from queue', 'info');
+}
+
+function retryBatchItem(itemId) {
+    const item = batchQueue.find(i => i.id == itemId);
+    if (item) {
+        item.status = 'waiting';
+        item.progress = 0;
+        item.error = null;
+        item.startTime = null;
+        item.endTime = null;
+        updateBatchUI();
+        showToast('Item queued for retry', 'info');
+    }
+}
+
+// ── PDF Viewer Functions ───────────────────────────────────────
+let pdfDoc = null;
+let currentPage = 1;
+let currentZoom = 1.0;
+let pdfTextContent = '';
+let searchResults = [];
+let currentSearchIndex = 0;
+
+async function openPDFViewer(pdfPath, pdfName) {
+    const modal = document.getElementById('pdfViewerModal');
+    const title = document.getElementById('pdfViewerTitle');
+    const loading = document.getElementById('pdfLoading');
+    const canvas = document.getElementById('pdfCanvas');
+    
+    if (!modal || !title || !loading || !canvas) return;
+    
+    // Show modal
+    modal.classList.add('show');
+    title.textContent = pdfName;
+    loading.style.display = 'flex';
+    
+    try {
+        // Load PDF
+        const pdfUrl = `/api/pdf-file?path=${encodeURIComponent(pdfPath)}`;
+        const loadingTask = pdfjsLib.getDocument(pdfUrl);
+        pdfDoc = await loadingTask.promise;
+        
+        // Update page info
+        document.getElementById('pdfTotalPages').textContent = pdfDoc.numPages;
+        currentPage = 1;
+        
+        // Render first page
+        await renderPDFPage(currentPage);
+        
+        // Generate page thumbnails
+        await generatePDFThumbnails();
+        
+        // Extract text for searching
+        await extractPDFText();
+        
+        // Hide loading
+        loading.style.display = 'none';
+        
+        showToast('PDF loaded successfully', 'success');
+        
+    } catch (error) {
+        console.error('Error loading PDF:', error);
+        loading.style.display = 'none';
+        showToast('Failed to load PDF: ' + error.message, 'error');
+        closePDFViewer();
+    }
+}
+
+async function renderPDFPage(pageNum) {
+    if (!pdfDoc) return;
+    
+    const canvas = document.getElementById('pdfCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    try {
+        const page = await pdfDoc.getPage(pageNum);
+        const viewport = page.getViewport({ scale: currentZoom });
+        
+        // Set canvas dimensions
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        
+        // Render page
+        const renderContext = {
+            canvasContext: ctx,
+            viewport: viewport
+        };
+        
+        await page.render(renderContext).promise;
+        
+        // Update page info
+        document.getElementById('pdfCurrentPage').textContent = pageNum;
+        
+        // Update navigation buttons
+        updatePDFNavigation();
+        
+        // Update thumbnail active state
+        updateThumbnailActive(pageNum);
+        
+    } catch (error) {
+        console.error('Error rendering PDF page:', error);
+        showToast('Failed to render page', 'error');
+    }
+}
+
+async function generatePDFThumbnails() {
+    const container = document.getElementById('pdfPageThumbnails');
+    if (!container || !pdfDoc) return;
+    
+    let html = '';
+    
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+        html += `
+            <div class="pdf-page-thumbnail" data-page="${i}" onclick="goToPDFPage(${i})">
+                <canvas id="thumb-${i}"></canvas>
+                <div class="pdf-page-number">${i}</div>
+            </div>
+        `;
+    }
+    
+    container.innerHTML = html;
+    
+    // Render thumbnails
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+        await renderPDFThumbnail(i);
+    }
+}
+
+async function renderPDFThumbnail(pageNum) {
+    const canvas = document.getElementById(`thumb-${pageNum}`);
+    if (!canvas || !pdfDoc) return;
+    
+    try {
+        const page = await pdfDoc.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 0.3 });
+        
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        
+        const ctx = canvas.getContext('2d');
+        await page.render({
+            canvasContext: ctx,
+            viewport: viewport
+        }).promise;
+        
+    } catch (error) {
+        console.error('Error rendering thumbnail:', error);
+    }
+}
+
+async function extractPDFText() {
+    if (!pdfDoc) return;
+    
+    let fullText = '';
+    
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+        try {
+            const page = await pdfDoc.getPage(i);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items
+                .map(item => item.str)
+                .join(' ');
+            fullText += pageText + '\n';
+        } catch (error) {
+            console.error('Error extracting text from page', i, error);
+        }
+    }
+    
+    pdfTextContent = fullText;
+    document.getElementById('pdfTextContent').textContent = fullText;
+}
+
+function goToPDFPage(pageNum) {
+    if (pageNum < 1 || pageNum > pdfDoc.numPages) return;
+    currentPage = pageNum;
+    renderPDFPage(currentPage);
+}
+
+function previousPDFPage() {
+    if (currentPage > 1) {
+        goToPDFPage(currentPage - 1);
+    }
+}
+
+function nextPDFPage() {
+    if (currentPage < pdfDoc.numPages) {
+        goToPDFPage(currentPage + 1);
+    }
+}
+
+function updatePDFNavigation() {
+    const prevBtn = document.getElementById('pdfPrevBtn');
+    const nextBtn = document.getElementById('pdfNextBtn');
+    
+    if (prevBtn) {
+        prevBtn.disabled = currentPage <= 1;
+    }
+    
+    if (nextBtn) {
+        nextBtn.disabled = currentPage >= pdfDoc.numPages;
+    }
+}
+
+function updateThumbnailActive(pageNum) {
+    const thumbnails = document.querySelectorAll('.pdf-page-thumbnail');
+    thumbnails.forEach(thumb => {
+        thumb.classList.toggle('active', parseInt(thumb.dataset.page) === pageNum);
+    });
+}
+
+function zoomInPDF() {
+    if (currentZoom < 3.0) {
+        currentZoom += 0.25;
+        updatePDFZoom();
+    }
+}
+
+function zoomOutPDF() {
+    if (currentZoom > 0.25) {
+        currentZoom -= 0.25;
+        updatePDFZoom();
+    }
+}
+
+function resetPDFZoom() {
+    currentZoom = 1.0;
+    updatePDFZoom();
+}
+
+function updatePDFZoom() {
+    document.getElementById('pdfZoomLevel').textContent = Math.round(currentZoom * 100) + '%';
+    renderPDFPage(currentPage);
+}
+
+function searchInPDF() {
+    const searchInput = document.getElementById('pdfSearchInput');
+    const searchResults = document.getElementById('pdfSearchResults');
+    const searchTerm = searchInput.value.trim();
+    
+    if (!searchTerm) {
+        searchResults.classList.remove('show');
+        clearPDFHighlights();
+        return;
+    }
+    
+    // Search in extracted text
+    const lines = pdfTextContent.split('\n');
+    const results = [];
+    
+    lines.forEach((line, lineIndex) => {
+        const regex = new RegExp(searchTerm, 'gi');
+        let match;
+        while ((match = regex.exec(line)) !== null) {
+            results.push({
+                page: Math.floor(lineIndex / 20) + 1, // Rough estimation
+                line: lineIndex,
+                text: line.substring(match.index, match.index + match[0].length),
+                context: line.substring(Math.max(0, match.index - 50), match.index + match[0].length + 50)
+            });
+        }
+    });
+    
+    displaySearchResults(results);
+    highlightSearchResults(searchTerm);
+}
+
+function displaySearchResults(results) {
+    const resultsContainer = document.getElementById('pdfSearchResults');
+    
+    if (results.length === 0) {
+        resultsContainer.innerHTML = '<div class="pdf-search-result">No results found</div>';
+        resultsContainer.classList.add('show');
+        return;
+    }
+    
+    let html = '';
+    results.slice(0, 10).forEach((result, index) => {
+        html += `
+            <div class="pdf-search-result" onclick="goToSearchResult(${index})">
+                <span class="pdf-search-result-page">Page ${result.page}</span>
+                <span class="pdf-search-result-text">${escapeHtml(result.context)}</span>
+            </div>
+        `;
+    });
+    
+    if (results.length > 10) {
+        html += `<div class="pdf-search-result">... and ${results.length - 10} more results</div>`;
+    }
+    
+    resultsContainer.innerHTML = html;
+    resultsContainer.classList.add('show');
+    searchResults = results;
+    currentSearchIndex = 0;
+}
+
+function highlightSearchResults(searchTerm) {
+    const textContent = document.getElementById('pdfTextContent');
+    if (!textContent) return;
+    
+    let html = pdfTextContent;
+    const regex = new RegExp(`(${searchTerm})`, 'gi');
+    html = html.replace(regex, '<span class="pdf-text-highlight">$1</span>');
+    
+    textContent.innerHTML = html;
+}
+
+function clearPDFHighlights() {
+    const textContent = document.getElementById('pdfTextContent');
+    if (textContent) {
+        textContent.textContent = pdfTextContent;
+    }
+}
+
+function goToSearchResult(index) {
+    if (searchResults[index]) {
+        const result = searchResults[index];
+        goToPDFPage(result.page);
+        document.getElementById('pdfSearchResults').classList.remove('show');
+    }
+}
+
+function closePDFViewer() {
+    const modal = document.getElementById('pdfViewerModal');
+    if (modal) {
+        modal.classList.remove('show');
+        pdfDoc = null;
+        currentPage = 1;
+        currentZoom = 1.0;
+        pdfTextContent = '';
+        searchResults = [];
+        currentSearchIndex = 0;
+    }
+}
+
+// Add keyboard shortcuts for PDF viewer
+document.addEventListener('keydown', (e) => {
+    const modal = document.getElementById('pdfViewerModal');
+    if (!modal || !modal.classList.contains('show')) return;
+    
+    switch(e.key) {
+        case 'ArrowLeft':
+            previousPDFPage();
+            break;
+        case 'ArrowRight':
+            nextPDFPage();
+            break;
+        case '+':
+        case '=':
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                zoomInPDF();
+            }
+            break;
+        case '-':
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                zoomOutPDF();
+            }
+            break;
+        case '0':
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                resetPDFZoom();
+            }
+            break;
+        case 'f':
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                document.getElementById('pdfSearchInput').focus();
+            }
+            break;
+        case 'Escape':
+            closePDFViewer();
+            break;
+    }
+});
+
+// Initialize PDF.js worker
+if (typeof pdfjsLib !== 'undefined') {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+// ── Smart Notification Functions ──────────────────────────────────
+function showProcessingStarted(fileName) {
+    showSmartNotification('processing-started', { fileName });
+}
+
+function showRotationCompleted(fileName) {
+    showSmartNotification('rotation-completed', { fileName });
+}
+
+function showPDFReady(fileName) {
+    showSmartNotification('pdf-ready', { fileName });
+}
+
+function showManualReview(count) {
+    showSmartNotification('manual-review', { count });
+}
+
+function showBatchCompleted(processed, failed) {
+    showSmartNotification('batch-completed', { processed, failed });
 }

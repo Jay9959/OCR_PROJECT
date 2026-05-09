@@ -860,6 +860,105 @@ def api_pdf_file():
     return send_file(str(requested))
 
 
+@app.route("/api/process-batch-file", methods=["POST"])
+def api_process_batch_file():
+    """Process a single file from batch by temporarily isolating it."""
+    data = request.json or {}
+    file_path = data.get("file_path")
+    script_type = data.get("script_type", "convert")
+    
+    if not file_path:
+        return jsonify({"error": "No file path provided"}), 400
+    
+    # Create temp directories for isolation
+    temp_input = BASE_DIR / "_temp_batch_input"
+    temp_backup = BASE_DIR / "_temp_batch_backup"
+    
+    try:
+        temp_input.mkdir(exist_ok=True)
+        temp_backup.mkdir(exist_ok=True)
+        
+        source_file = INPUT_FOLDER / file_path
+        if not source_file.exists():
+            return jsonify({"error": "File not found in input folder"}), 404
+        
+        # Move all PDFs to backup except the target file
+        all_pdfs = list(INPUT_FOLDER.rglob("*.pdf"))
+        for pdf in all_pdfs:
+            if pdf != source_file:
+                rel_path = pdf.relative_to(INPUT_FOLDER)
+                backup_path = temp_backup / rel_path
+                backup_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(pdf), str(backup_path))
+        
+        # Start the processing script
+        reset_state()
+        process_state["status"] = "running"
+        process_state["current_script"] = script_type
+        process_state["start_time"] = time.time()
+        
+        script = CONVERT_SCRIPT if script_type == "convert" else FINALCODE_SCRIPT
+        python_exe = sys.executable
+        
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
+        
+        proc = subprocess.Popen(
+            [python_exe, str(script)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(BASE_DIR),
+            env=env,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0,
+        )
+        process_state["process"] = proc
+        
+        thread = threading.Thread(target=stream_output, args=(proc, script_type), daemon=True)
+        thread.start()
+        
+        return jsonify({"success": True, "pid": proc.pid})
+        
+    except Exception as e:
+        # Restore files on error
+        restore_batch_files()
+        process_state["status"] = "error"
+        process_state["error_message"] = str(e)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/restore-batch-files", methods=["POST"])
+def api_restore_batch_files():
+    """Restore all backed up batch files after processing."""
+    try:
+        restore_batch_files()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def restore_batch_files():
+    """Restore all files from temp backup to input folder."""
+    temp_backup = BASE_DIR / "_temp_batch_backup"
+    if not temp_backup.exists():
+        return
+    
+    for backup_file in temp_backup.rglob("*.pdf"):
+        rel_path = backup_file.relative_to(temp_backup)
+        target_path = INPUT_FOLDER / rel_path
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(backup_file), str(target_path))
+    
+    # Clean up temp directories
+    shutil.rmtree(temp_backup, ignore_errors=True)
+    temp_input = BASE_DIR / "_temp_batch_input"
+    shutil.rmtree(temp_input, ignore_errors=True)
+
+
 # ── Static files ──────────────────────────────────────────────
 @app.route("/style.css")
 def serve_css():
